@@ -585,6 +585,7 @@ dependencies = [
  "hashbrown",
  "libafl",
  "libafl_cc",
+ "libc",
  "mimalloc",
  "postcard",
  "serde",

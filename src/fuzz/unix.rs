@@ -20,8 +20,6 @@ use crate::error::Error;
 ///
 ///
 pub(super) fn fuzz(options: FuzzerOptions) -> Result<(), Error> {
-    // AFL standard map size
-    const MAP_SIZE: usize = 65536;
 
     // Component: Monitor
     #[cfg(feature = "tui")]
@@ -33,7 +31,7 @@ pub(super) fn fuzz(options: FuzzerOptions) -> Result<(), Error> {
 
     // AFL++ compatible shmem provider
     let mut shmem_provider = UnixShMemProvider::new().unwrap();
-    let mut shmem = shmem_provider.new_shmem(MAP_SIZE).unwrap();
+    let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
     // provide shmid for forkserver
     shmem.write_to_env("__AFL_SHM_ID").unwrap();
 
