@@ -31,7 +31,7 @@ where
                     state,
                     Event::Log {
                         severity_level: LogSeverity::Debug,
-                        message: format!("Loaded tokens {:?}", tokens.tokens()),
+                        message: format!("Loaded tokens {} from {:?}", tokens.len(), options.tokens),
                         phantom: PhantomData::<S::Input>,
                     },
                 )?;
