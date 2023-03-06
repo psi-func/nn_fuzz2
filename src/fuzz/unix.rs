@@ -8,6 +8,9 @@ use super::{
     TimeoutFeedback, TimeoutForkserverExecutor, UnixShMemProvider,
 };
 
+#[cfg(feature = "tui")]
+use super::tui::TuiMonitor;
+
 use std::path::PathBuf;
 
 use crate::components::{fuzzer::HeavyFuzzer, stages::CustomMutationalStage};
