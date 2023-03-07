@@ -30,7 +30,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // AFL++ compatible shmem provider
     let shmem_provider = StdShMemProvider::new()?;
 
-    let mut run_client = |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, _core_id| {
+    let mut run_client = |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, core_id| {
         let mut shmem_provider = StdShMemProvider::new()?;
         let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
         // provide shmid for forkserver
@@ -98,6 +98,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             .debug_child(options.debug_child)
             .shmem_provider(&mut shmem_provider)
             .parse_afl_cmdline(options.args.clone())
+            .arg_input_file(format!(".cur_input_{core_id}"))
             .build(tuple_list!(time_observer, edges_observer))
             .unwrap();
 
