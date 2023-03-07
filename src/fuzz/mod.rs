@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::path::Path;
 
 use libafl::prelude::*;
 
@@ -31,7 +32,11 @@ where
                     state,
                     Event::Log {
                         severity_level: LogSeverity::Debug,
-                        message: format!("Loaded tokens {} from {:?}", tokens.len(), options.tokens),
+                        message: format!(
+                            "Loaded tokens {} from {:?}",
+                            tokens.len(),
+                            options.tokens
+                        ),
                         phantom: PhantomData::<S::Input>,
                     },
                 )?;
@@ -44,4 +49,44 @@ where
         state.add_metadata(tokens);
     };
     Ok(())
+}
+
+fn mutate_args(args: &[String], config: &Path, core_id: usize) -> Result<Vec<String>, Error> {
+    use serde::Deserialize;
+    use std::collections::HashMap;
+    use std::fs;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    enum Mutation {
+        Increment,
+    }
+
+    fn increment(arg: &str, core_id: usize) -> Result<String, Error> {
+        match arg.parse::<usize>() {
+            Ok(value) => Ok(format!("{}", value + core_id)),
+            Err(e) => Err(Error::illegal_argument(e.to_string())),
+        }
+    }
+
+    impl Mutation {
+        fn mutate(&self, arg: &str, core_id: usize) -> Result<String, Error> {
+            match *self {
+                Mutation::Increment => increment(arg, core_id),
+            }
+        }
+    }
+
+    let works: HashMap<String, Mutation> =
+        fs::read_to_string(config).map(|text| serde_json::from_str(&text).unwrap_or_else(|_| {
+            panic!("Invalid configure file! {:?}", config);
+        }))?;
+    
+        let new_args : Vec<String> = args.iter().map(|el| {
+            match works.get(el) {
+                Some(value) => value.mutate(el.as_str(), core_id).unwrap(),
+                None => el.into(),
+            }
+        }).collect();
+        Ok(new_args)
 }

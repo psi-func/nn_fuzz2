@@ -1,0 +1,6 @@
+// key value pairs where key is argument to match and value is method to mutate arg throw inferiors
+// Now available methods:
+//  - increment
+{
+    "-p": "increment"
+}

@@ -47,6 +47,13 @@ pub struct FuzzerOptions {
     pub cores: Cores,
 
     #[arg(
+        long,
+        value_name = "FILE",
+        help = "The file which describes how to mutate args in inferior using `core_id`",
+    )]
+    pub core_args_config : Option<PathBuf>,
+    
+    #[arg(
         long, 
         value_name = "FILE",
         help = "The file to write output from fuzzer instances",
