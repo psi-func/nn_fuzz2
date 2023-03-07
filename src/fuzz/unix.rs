@@ -97,8 +97,8 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             .program(options.executable.clone())
             .debug_child(options.debug_child)
             .shmem_provider(&mut shmem_provider)
-            .parse_afl_cmdline(options.args.clone())
             .arg_input_file(format!(".cur_input_{core_id}"))
+            .parse_afl_cmdline(options.args.clone())
             .build(tuple_list!(time_observer, edges_observer))
             .unwrap();
 
