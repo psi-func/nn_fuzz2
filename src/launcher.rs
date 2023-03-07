@@ -60,7 +60,7 @@ where
     #[builder(default = false)]
     spawn_nn_client: bool,
     /// The `port` of nn
-    #[builder(default = 7878_u16)]
+    #[builder()]
     remote_nn_port: u16,
     /// If this launcher should spawn a new `broker` on `[Self::broker_port]` (default).
     /// The reason you may not want this is, if you already have a [`Launcher`]

@@ -6,7 +6,7 @@ use clap::{self, Parser};
 #[allow(unused_imports)]
 use serde::{Deserialize, Serialize};
 
-use libafl::Error;
+use libafl::{Error, prelude::Cores};
 
 #[must_use]
 pub fn parse_args() -> FuzzerOptions {
@@ -33,6 +33,18 @@ pub struct FuzzerOptions {
         allow_hyphen_values = true,
     )]
     pub args: Vec<String>,
+
+    /// Spawn a client in each of the provided cores. Use 'all' to select all available
+    /// cores. 'none' to run a client without binding to any core.
+    /// ex: '1,2-4,6' selects the cores 1, 2, 3, 4, and 6.
+    #[arg(
+        short,
+        long,
+        default_value = "0",
+        value_parser = Cores::from_cmdline,
+        help = "The list of cores where spawn fuzzers"
+    )]
+    pub cores: Cores,
 
     #[arg(
         long, 
@@ -137,7 +149,6 @@ pub struct FuzzerOptions {
         help_heading = "Broker Options",
     )]
     pub client_port: u16,
-
 
 
 }

@@ -13,7 +13,7 @@ mod detail;
 ///
 /// - ``Error::ShuttingDown`` when fuzzer stops normally
 ///
-pub fn fuzz(options: FuzzerOptions) -> Result<(), Error> {
+pub fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     detail::fuzz(options)
 }
 
