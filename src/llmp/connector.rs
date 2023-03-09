@@ -138,15 +138,6 @@ pub struct NNDescription {
     pub nn_version: String,
 }
 
-pub struct InitContext<SP>
-where
-    SP: ShMemProvider + 'static,
-{
-    pub port: u16,
-    pub broadcast_receiver: LlmpReceiver<SP>,
-    pub sender: LlmpSender<SP>,
-}
-
 #[derive(Debug)]
 enum Listener {
     Tcp(TcpListener),
@@ -157,7 +148,7 @@ impl Listener {
         match self {
             Listener::Tcp(inner) => match inner.accept().await {
                 Ok(res) => ListenerStream::Tcp(res.0, res.1),
-                Err(err) => ListenerStream::Empty,
+                Err(_) => ListenerStream::Empty,
             },
         }
     }
@@ -178,7 +169,7 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
     let listener = Listener::Tcp(
         TcpListener::bind((_BIND_ADDR, port))
             .await
-            .expect(&format!("NN connector: Cannot bind to port: {port}")),
+            .unwrap_or_else(|_| panic!("NN connector: Cannot bind to port: {port}")),
     );
 
     let hello = TcpResponce::RemoteFuzzerHello {
@@ -186,7 +177,7 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
             ec_size: crate::MAP_SIZE,
             // TODO: get real values
             instances: 0,
-            fuzz_target: "".to_string(),
+            fuzz_target: String::new(),
         },
     };
 
@@ -194,7 +185,7 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
 
     loop {
         match listener.accept().await {
-            ListenerStream::Tcp(mut stream, addr) => {
+            ListenerStream::Tcp(mut stream, _) => {
                 match send_tcp_message(&mut stream, &hello).await {
                     Ok(()) => {}
                     Err(e) => {
@@ -214,7 +205,7 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
                 let req = match buf.try_into() {
                     Ok(req) => req,
                     Err(e) => {
-                        eprintln!("Could not deserialize tcp message: {:?}", e);
+                        eprintln!("Could not deserialize tcp message: {e:?}");
                         continue;
                     }
                 };
@@ -222,35 +213,30 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
                 // handle connection
                 match req {
                     // remote nn connection
-                    TcpRequest::RemoteNnHello { nn_name, nn_version } => {
+                    TcpRequest::RemoteNnHello {
+                        nn_name,
+                        nn_version,
+                    } => {
                         if let Some(send) = sender.take() {
                             let client_id = u32::MAX;
 
                             let msg = TcpResponce::RemoteNNAccepted { client_id };
 
-                            match send_tcp_message(&mut stream, &msg).await {
-                                Err(e) => println!("Cannot send message"),
-                                _ => ()
+                            if let Err(e) = send_tcp_message(&mut stream, &msg).await {
+                                println!("Cannot send message");
                             }
 
                             tokio::task::spawn_blocking(move || {
                                 let mut nn_connector: NnConnector<SP> =
                                     NnConnector::new(broker_shmem_description, client_id, send);
 
-                                nn_connector.handle_connection(stream, NNDescription { nn_name, nn_version });
+                                let description = NNDescription {
+                                    nn_name,
+                                    nn_version,
+                                };
+
+                                nn_connector.handle_connection(stream, &description);
                             });
-
-                            // tokio::spawn(async move {
-                                //     let nn_connector: NnConnector<SP> =
-                                //         NnConnector::new(broker_shmem_description, client_id, send);
-                                
-                                //     nn_connector.handle_connection(
-                            //         stream,
-                            //         description,
-
-                            //     )
-                            //     .await;
-                            // });
                         } else {
                             eprintln!("Can only connect with one nn");
                         }
@@ -259,13 +245,13 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
                     TcpRequest::LocalHello { client_id } => {
                         tokio::spawn(async move {
                             let mut fuzz_connector = InstanceConnector::new(client_id);
-                            
+
                             fuzz_connector.handle_connection(stream).await;
                         });
                     }
                 }
             }
-                
+
             // Just ignore faults
             ListenerStream::Empty => {
                 continue;
@@ -307,7 +293,7 @@ where
     ) -> Self {
         let shmem_provider_bg = SP::new().unwrap();
 
-        let mut new_sender = match LlmpSender::new(shmem_provider_bg.clone(), client_id, false) {
+        let new_sender = match LlmpSender::new(shmem_provider_bg.clone(), client_id, false) {
             Ok(new_sender) => new_sender,
             Err(e) => {
                 panic!("NN connector: Could not map shared map: {e}");
@@ -333,7 +319,7 @@ where
         }
     }
 
-    fn handle_connection(&mut self, stream: TcpStream, desc: NNDescription) {
+    fn handle_connection(&mut self, stream: TcpStream, _desc: &NNDescription) {
         // prepare stream
         let mut stream = transform_stream(stream).expect("Cannot transform stream");
 
@@ -396,22 +382,21 @@ where
     T: Serialize,
 {
     let msg = postcard::to_allocvec(msg)?;
-    if msg.len() > u32::MAX as usize {
-        return Err(Error::illegal_state(format!(
+    if let Ok(len) = u32::try_from(msg.len()) {
+        let size_bytes = len.to_be_bytes();
+        stream.write_all(&size_bytes).await?;
+        stream.write_all(&msg).await?;
+        Ok(())
+    } else {
+        Err(Error::illegal_state(format!(
             "Trying to send a tcp message > u32 (size: {})",
             msg.len()
-        )));
+        )))
     }
-
-    let size_bytes = (msg.len() as u32).to_be_bytes();
-    stream.write_all(&size_bytes).await?;
-    stream.write_all(&msg).await?;
-
-    Ok(())
 }
 
 fn transform_stream(stream: TcpStream) -> Result<StdTcpStream, std::io::Error> {
-    let mut std_tcp_stream = stream.into_std()?;
+    let std_tcp_stream = stream.into_std()?;
     std_tcp_stream.set_nonblocking(false)?;
     Ok(std_tcp_stream)
 }
@@ -421,18 +406,17 @@ where
     T: Serialize,
 {
     let msg = postcard::to_allocvec(msg)?;
-    if msg.len() > u32::MAX as usize {
+    if let Ok(len) = u32::try_from(msg.len()) {
+        let size_bytes = len.to_be_bytes();
+        stream.write_all(&size_bytes)?;
+        stream.write_all(&msg)?;
+        Ok(())
+    } else {
         return Err(Error::illegal_state(format!(
             "Trying to send message a tcp message > u32! (size: {})",
             msg.len()
         )));
     }
-
-    let size_bytes = (msg.len() as u32).to_be_bytes();
-    stream.write_all(&size_bytes)?;
-    stream.write_all(&msg)?;
-
-    Ok(())
 }
 
 async fn recv_tcp_message(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {

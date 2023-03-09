@@ -58,10 +58,10 @@ where
     /// Launch the restarting manager
     pub fn launch(&mut self) -> Result<(Option<S>, RestartingNnEventManager<S, SP>), Error> {
         // We start ourself as child process to actually fuzz
-        let broker_things = |mut broker: LlmpNnEventBroker<S::Input, MT, SP>, remote_nn_addr| {
-            if let Some(remote_nn_addr) = remote_nn_addr {
-                println!("B2b: Connecting to {:?}", &remote_nn_addr);
-                broker.spawn_client(remote_nn_addr)?;
+        let broker_things = |mut broker: LlmpNnEventBroker<S::Input, MT, SP>, remote_nn_port| {
+            if let Some(nn_port) = remote_nn_port {
+                println!("B2b: Connecting to {:?}", &nn_port);
+                broker.spawn_client(nn_port)?;
             };
 
             broker.broker_loop()

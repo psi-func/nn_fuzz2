@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Llmp extension to provide nn predicts over network
 ///
 use std::marker::PhantomData;
@@ -173,7 +174,7 @@ where
 {
     /// LLMP clients will have to wait until their pages are mapped by somebody
     fn drop(&mut self) {
-        self.await_restart_safe()
+        self.await_restart_safe();
     }
 }
 
@@ -252,7 +253,7 @@ where
 {
     fn fire(
         &mut self,
-        state: &mut Self::State,
+        _state: &mut Self::State,
         event: libafl::prelude::Event<<Self::State as UsesInput>::Input>,
     ) -> Result<(), Error> {
         let serialized = postcard::to_allocvec(&event)?;
@@ -286,9 +287,9 @@ where
 {
     fn process(
         &mut self,
-        fuzzer: &mut Z,
-        state: &mut Self::State,
-        executor: &mut E,
+        _fuzzer: &mut Z,
+        _state: &mut Self::State,
+        _executor: &mut E,
     ) -> Result<usize, Error> {
         todo!()
     }
@@ -341,6 +342,7 @@ where
         )?))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn spawn_client(&mut self, port: u16) -> Result<(), Error> {
         let map_description = Self::nn_thread_on(
             port,
@@ -385,14 +387,14 @@ where
                 .unwrap()
                 .block_on(async move {
                     run_service::<SP>(send, broker_shmem_description, client_id, port).await;
-                })
+                });
         });
 
-        let ret = recv.blocking_recv().map_err(|_| {
+        
+
+        recv.blocking_recv().map_err(|_| {
             Error::unknown("Error launching background thread for nn communication".to_string())
-        });
-
-        ret
+        })
     }
 }
 

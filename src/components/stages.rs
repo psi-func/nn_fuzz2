@@ -1,3 +1,9 @@
+#![allow(dead_code)]
+#![allow(
+    clippy::cast_possible_wrap, 
+    clippy::cast_possible_truncation
+)]
+
 use core::marker::PhantomData;
 
 use libafl::{
@@ -145,9 +151,7 @@ where
         manager: &mut EM,
         corpus_idx: usize,
     ) -> Result<(), Error> {
-        let ret = self.perform_mutational(fuzzer, executor, state, manager, corpus_idx);
-
-        ret
+        self.perform_mutational(fuzzer, executor, state, manager, corpus_idx)
     }
 }
 
@@ -169,7 +173,7 @@ where
         &mut self.mutator
     }
 
-    fn iterations(&self, state: &mut <Z>::State, corpus_idx: usize) -> Result<usize, Error> {
+    fn iterations(&self, state: &mut <Z>::State, _corpus_idx: usize) -> Result<usize, Error> {
         Ok(1 + state.rand_mut().below(DEFAULT_MUTATIONAL_MAX_ITERATIONS) as usize)
     }
 
@@ -189,7 +193,6 @@ where
             let exist_depth;
             let mut input;
             {
-
                 let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
                 exist_depth = if testcase.has_metadata::<MutationMeta>() {
                     *testcase.metadata().get::<MutationMeta>().unwrap().depth()
@@ -215,7 +218,7 @@ where
                 if let Some(idx) = corpus_idx {
                     let depth = {
                         let mut testcase = state.corpus().get(idx)?.borrow_mut();
-                        
+
                         testcase.add_metadata::<MutationMeta>(MutationMeta {
                             depth: exist_depth + 1,
                         });
