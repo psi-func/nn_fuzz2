@@ -84,7 +84,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         println!("start fuzzer...");
 
         // LOAD TOKENS
-        load_tokens(&mut state, options.tokens.as_slice(), &mut mgr)?;
+        load_tokens(options.tokens.as_slice(), &mut state, &mut mgr)?;
 
         // Component: Scheduler
         let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());

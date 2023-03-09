@@ -18,7 +18,7 @@ pub fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     detail::fuzz(options)
 }
 
-fn load_tokens<EM, S>(state: &mut S, dicts: &[PathBuf], mgr: &mut EM) -> Result<(), Error>
+fn load_tokens<EM, S>(dicts: &[PathBuf], state: &mut S, mgr: &mut EM) -> Result<(), Error>
 where
     EM: EventFirer<State = S>,
     S: HasMetadata + UsesInput,
@@ -31,7 +31,7 @@ where
                 mgr.fire(
                     state,
                     Event::Log {
-                        severity_level: LogSeverity::Debug,
+                        severity_level: LogSeverity::Error,
                         message: format!("Loaded tokens {} from {dicts:?}", tokens.len()),
                         phantom: PhantomData::<S::Input>,
                     },
