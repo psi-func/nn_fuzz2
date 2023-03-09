@@ -31,7 +31,7 @@ where
                 mgr.fire(
                     state,
                     Event::Log {
-                        severity_level: LogSeverity::Error,
+                        severity_level: LogSeverity::Debug,
                         message: format!("Loaded tokens {} from {dicts:?}", tokens.len()),
                         phantom: PhantomData::<S::Input>,
                     },

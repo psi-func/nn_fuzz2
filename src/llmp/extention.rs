@@ -513,7 +513,6 @@ where
             } => {
                 let (_, _) = (severity_level, message);
                 // TODO rely on Monitor
-                #[cfg(feature = "std")]
                 println!("[LOG {severity_level}]: {message}");
                 Ok(BrokerEventResult::Handled)
             }
