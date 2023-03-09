@@ -1,6 +1,6 @@
 use super::{
-    current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, ondisk,
-    tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
+    current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
+    ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
     CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer, FuzzerOptions, HasCorpus,
     HitcountsMapObserver, IndexesLenTimeMinimizerScheduler, LlmpRestartingEventManager,
     MaxMapFeedback, Merge, MultiMonitor, OnDiskCorpus, QueueScheduler, RandBytesGenerator, ShMem,
@@ -84,7 +84,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         println!("start fuzzer...");
 
         // LOAD TOKENS
-        load_tokens(&mut state, options, &mut mgr)?;
+        load_tokens(&mut state, options.tokens.as_slice(), &mut mgr)?;
 
         // Component: Scheduler
         let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());
@@ -92,13 +92,19 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         // Component: Real Fuzzer
         let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
 
+        // MUTATE arguments
+        let mut harness_args = options.args.clone();
+        if let Some(config) = options.core_args_config.as_ref() {
+            mutate_args(harness_args.as_mut_slice(), config, core_id)?;
+        }
+
         // Component: EXECUTOR
         let forkserver = ForkserverExecutor::builder()
             .program(options.executable.clone())
             .debug_child(options.debug_child)
             .shmem_provider(&mut shmem_provider)
             .arg_input_file(format!(".cur_input_{core_id}"))
-            .parse_afl_cmdline(options.args.clone())
+            .parse_afl_cmdline(harness_args)
             .build(tuple_list!(time_observer, edges_observer))
             .unwrap();
 
