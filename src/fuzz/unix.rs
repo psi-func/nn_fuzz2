@@ -161,6 +161,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         .cores(&options.cores)
         .broker_port(options.broker_port)
         .stdout_file(options.stdout.as_deref())
+        .spawn_broker(!options.no_broker)
         .spawn_nn_client(options.spawn_client)
         .remote_nn_port(options.client_port)
         .build()

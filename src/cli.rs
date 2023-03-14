@@ -131,6 +131,14 @@ pub struct FuzzerOptions {
     pub input_max_length: usize,
     
     #[arg(
+        short = 'B',
+        long,
+        help = "If not set, spawn broker for fuzzers",
+        help_heading = "Broker Options",
+    )]
+    pub no_broker : bool,
+
+    #[arg(
         long,
         default_value = "1337",
         value_name = "PORT",
