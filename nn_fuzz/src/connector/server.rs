@@ -8,13 +8,13 @@ use std::net::SocketAddr;
 use std::net::TcpStream as StdTcpStream;
 use std::time::Duration;
 
-use libafl::bolts::llmp::{ClientId, Flags, LlmpDescription, LlmpReceiver, LlmpSender, Tag};
+use libafl::bolts::llmp::{ClientId, LlmpDescription, LlmpReceiver, LlmpSender};
 use libafl::bolts::shmem::{ShMem, ShMemDescription, ShMemProvider};
 use libafl::Error;
 
 use serde::{Deserialize, Serialize};
 
-pub const LLMP_FLAG_FROM_NN: Flags = 0x4;
+use super::messages::{TcpRequest, TcpResponce, TcpRemoteNewMessage, FuzzerDescription, LLMP_FLAG_FROM_NN};
 
 const _MAX_WORKING_THREADS: usize = 2;
 const _LLMP_NN_BLOCK_TIME: Duration = Duration::from_millis(3_000);
@@ -24,119 +24,6 @@ const _BIND_ADDR: &str = "0.0.0.0";
 
 #[cfg(not(feature = "bind_public"))]
 const _BIND_ADDR: &str = "127.0.0.1";
-
-/// Messages for nn connection.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TcpRemoteNewMessage {
-    /// the client ID of the fuzzer
-    client_id: ClientId,
-    /// the message tag
-    tag: Tag,
-    /// the flags
-    flags: Flags,
-    /// actual content of message
-    payload: Vec<u8>,
-}
-
-impl TryFrom<&Vec<u8>> for TcpRemoteNewMessage {
-    type Error = Error;
-
-    fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(bytes)?)
-    }
-}
-
-impl TryFrom<Vec<u8>> for TcpRemoteNewMessage {
-    type Error = Error;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(&bytes)?)
-    }
-}
-
-/// Handshake over NN and Fuzzer
-///
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum TcpResponce {
-    /// After receiving new connection, the broker send hello
-    RemoteFuzzerHello { fuzz_description: FuzzerDescription },
-    // Notify the client nn that it has been accepted
-    RemoteNNAccepted {
-        /// The clientId this client should send messages as.
-        client_id: ClientId,
-    },
-    /// Something went wrong when processing the request
-    Error {
-        /// Error description
-        description: String,
-    },
-}
-
-impl TryFrom<&Vec<u8>> for TcpResponce {
-    type Error = Error;
-
-    fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(bytes.as_slice())?)
-    }
-}
-
-impl TryFrom<Vec<u8>> for TcpResponce {
-    type Error = Error;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(bytes.as_slice())?)
-    }
-}
-
-/// Response for requests to the nn
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum TcpRequest {
-    /// After sending hello wait for hello from nn
-    RemoteNnHello {
-        /// Additional info about nn env and settings
-        nn_name: String,
-        nn_version: String,
-    },
-    /// After sending hello wait for hello from local fuzzer instances
-    LocalHello {
-        /// Additional info about local fuzzer
-        client_id: ClientId,
-    },
-}
-
-impl TryFrom<Vec<u8>> for TcpRequest {
-    type Error = Error;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(bytes.as_slice())?)
-    }
-}
-
-impl TryFrom<&Vec<u8>> for TcpRequest {
-    type Error = Error;
-
-    fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        Ok(postcard::from_bytes(bytes.as_slice())?)
-    }
-}
-
-/// Info required by neural network to work with
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FuzzerDescription {
-    /// edge coverage map size
-    pub ec_size: usize,
-    /// Running instances count
-    pub instances: usize,
-    /// Fuzzing target
-    pub fuzz_target: String,
-}
-
-/// Info which NN provides before start
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct NNDescription {
-    pub nn_name: String,
-    pub nn_version: String,
-}
 
 #[derive(Debug)]
 enum Listener {
@@ -160,10 +47,21 @@ pub enum ListenerStream {
     Empty,
 }
 
+/// Info which NN provides before start
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct NNDescription {
+    nn_name: String,
+    nn_version: String,
+}
+
+/// 
+/// # Panics
+///    panics if port is already used bu other process
+///
 pub async fn run_service<SP: ShMemProvider + 'static>(
     sender: Sender<ShMemDescription>,
     broker_shmem_description: ShMemDescription,
-    client_id: ClientId,
+    _client_id: ClientId,
     port: u16,
 ) {
     let listener = Listener::Tcp(
@@ -222,7 +120,7 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
 
                             let msg = TcpResponce::RemoteNNAccepted { client_id };
 
-                            if let Err(e) = send_tcp_message(&mut stream, &msg).await {
+                            if let Err(_e) = send_tcp_message(&mut stream, &msg).await {
                                 println!("Cannot send message");
                             }
 
@@ -261,15 +159,15 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
 }
 
 struct InstanceConnector {
-    id: ClientId,
+    _id: ClientId,
 }
 
 impl InstanceConnector {
     fn new(client_id: ClientId) -> Self {
-        InstanceConnector { id: client_id }
+        InstanceConnector { _id: client_id }
     }
 
-    async fn handle_connection(&mut self, stream: TcpStream) {
+    async fn handle_connection(&mut self, _stream: TcpStream) {
         // setup
 
         loop {} // end loop

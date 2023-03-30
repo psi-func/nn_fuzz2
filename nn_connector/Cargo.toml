@@ -1,0 +1,24 @@
+[package]
+name = "nn_connector"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://git.mobiledep.ru/iifuzzing/fuzzerclient.git"
+authors = ["Shalagin Maksim <shalaginmx998@yandex.ru>"]
+keywords = ["fuzzing", "security"]
+categories = ["api-bindings"]
+description = "fuzzer tcp client for neural network communication"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "nn_connector"
+crate-type = ["cdylib"]
+
+[dependencies]
+nn_lib = { package = "nn_fuzz", path = "../nn_fuzz" }
+pyo3 = { version = "0.17", features = ["extension-module"] }
+libafl = { path = "../../LibAFL/libafl" }
+serde = { version = "1.0" }
+serde_json = { version = "1.0" }
+postcard = { version = "1.0", features = ["alloc"] }

@@ -24,7 +24,7 @@ use libafl::{Error, EvaluatorObservers, ExecutionProcessor};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::channel;
 
-use super::connector::run_service;
+use crate::connector::server::run_service;
 
 const LLMP_TAG_EVENT_TO_BOTH: Tag = 0x002B_0741;
 

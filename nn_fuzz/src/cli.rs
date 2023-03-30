@@ -115,6 +115,16 @@ pub struct FuzzerOptions {
     pub output: PathBuf,
 
     #[arg(
+        short,
+        long,
+        value_name = "PATH",
+        default_value = "corpus_discovered/",
+        help = "The directory where corpus is stored",
+        help_heading = "Corpus Options",
+    )]
+    pub queue: PathBuf,
+
+    #[arg(
         long,
         default_value = "20",
         help = "The number of generated inputs (used only if no input)",

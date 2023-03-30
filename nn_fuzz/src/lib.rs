@@ -9,8 +9,9 @@ mod components;
 mod llmp;
 mod launcher;
 
-pub mod cli;
 pub mod fuzz;
+pub mod cli;
+pub mod connector;
 pub mod error;
 
 
