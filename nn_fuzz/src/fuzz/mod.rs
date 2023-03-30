@@ -15,7 +15,18 @@ mod detail;
 /// - ``Error::ShuttingDown`` when fuzzer stops normally
 ///
 pub fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
+    check_options(options)?;
     detail::fuzz(options)
+}
+
+fn check_options(options: &FuzzerOptions) -> Result<(), Error> {
+    if let Some(ref vals) = options.seed.vals {
+        if options.cores.ids.len() > vals.len() {
+            return Err(Error::illegal_argument(format!("Invalid seed size! Please, provide {} unique seeds", options.cores.ids.len())));
+        }
+        // other checks
+    }
+    Ok(())
 }
 
 fn load_tokens<EM, S>(dicts: &[PathBuf], state: &mut S, mgr: &mut EM) -> Result<(), Error>

@@ -2,3 +2,4 @@
 /.venv
 /target
 /rundir*/
+**/Cargo.lock

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use libafl::{Error, prelude::Cores};
 
+use crate::utils::seed::Seeds;
+
 #[must_use]
 pub fn parse_args() -> FuzzerOptions {
     FuzzerOptions::parse()
@@ -63,10 +65,12 @@ pub struct FuzzerOptions {
     #[arg(
         short,
         long,
+        default_value = "auto",
+        value_parser = Seeds::from_cmdline,
         help = "The initial seed value for random generator, current_nanos if undefined",
         help_heading = "Fuzz Options",
     )]
-    pub seed: Option<u64>,
+    pub seed: Seeds,
 
     #[arg(
         short, 

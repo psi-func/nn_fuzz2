@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use super::{
     current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
     ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
@@ -20,6 +22,7 @@ use crate::launcher::Launcher;
 /// Fuzzer for unix-like systems
 ///
 ///
+#[allow(clippy::too_many_lines)]
 pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // Component: Monitor
     #[cfg(feature = "tui")]
@@ -30,7 +33,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // AFL++ compatible shmem provider
     let shmem_provider = StdShMemProvider::new()?;
 
-    let mut run_client = |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, core_id| {
+    let mut run_client = |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, core_id : usize| {
         let mut shmem_provider = StdShMemProvider::new()?;
         let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
         // provide shmid for forkserver
@@ -59,12 +62,21 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             // hangs
             TimeoutFeedback::new()
         );
+        
+        let seed = match &options.seed.vals {
+            Some(vals) => {
+                let (idx, _) = options.cores.ids.iter().find_position(|&&x| x == core_id.into()).unwrap();
+                vals[idx]
+            },
+            None => current_nanos(),
+        };
+        println!("[Core {core_id}] setup seed: {seed}");
 
         // Component: State
         let mut state = state.unwrap_or_else(|| {
             StdState::new(
                 // RND
-                StdRand::with_seed(options.seed.unwrap_or_else(current_nanos)),
+                StdRand::with_seed(seed),
                 // Evol corpus
                 CachedOnDiskCorpus::<BytesInput>::new(PathBuf::from("./corpus_discovered"), 64)
                     .unwrap(),

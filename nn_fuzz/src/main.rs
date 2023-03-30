@@ -11,8 +11,9 @@ fn main() {
         Ok(_) | Err(Error::ShuttingDown) => {
             println!("Congrat! Good bye");
         },
-        Err(_) => {
+        Err(e) => {
             println!("Some error during fuzzing");
+            println!("{}", e.to_string());
         }
     }
 }
