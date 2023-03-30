@@ -22,15 +22,16 @@ fn parse_timeout(src: &str) -> Result<Duration, Error> {
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about)]
 pub struct FuzzerOptions {
+
+    /// The instrumented binary we want to fuzz
     #[arg(
-        help = "The instrumented binary we want to fuzz",
         name = "EXEC",
         required = true,
     )]
     pub executable: PathBuf,
 
+    /// The arguments passed to target
     #[arg(
-        help = "The arguments passed to target",
         num_args(1..),
         allow_hyphen_values = true,
     )]
@@ -44,137 +45,139 @@ pub struct FuzzerOptions {
         long,
         default_value = "0",
         value_parser = Cores::from_cmdline,
-        help = "The list of cores where spawn fuzzers"
     )]
     pub cores: Cores,
 
+    /// The file which describes how to mutate args in inferior using `core_id`
     #[arg(
         long,
         value_name = "FILE",
-        help = "The file which describes how to mutate args in inferior using `core_id`",
     )]
     pub core_args_config : Option<PathBuf>,
     
+    /// The file to write output from fuzzer instances
     #[arg(
         long, 
         value_name = "FILE",
-        help = "The file to write output from fuzzer instances",
         help_heading = "Fuzz Options")]
     pub stdout: Option<String>,
     
+    /// The list of seeds for random generator per core, current_nanos if "auto"
+    /// Must be not less than cores list len!
+    /// 
+    /// Example: 703,12,0-10
     #[arg(
         short,
         long,
         default_value = "auto",
         value_parser = Seeds::from_cmdline,
-        help = "The initial seed value for random generator, current_nanos if undefined",
         help_heading = "Fuzz Options",
     )]
     pub seed: Seeds,
 
+    /// The timeout for each input execution (millis)
     #[arg(
         short, 
         long,
         value_parser = parse_timeout,
         default_value = "1000", 
-        help = "The timeout for each input execution (millis)",
         help_heading = "Fuzz Options",
     )]
     pub timeout: Duration,
 
+    /// The token file for token mutations
     #[arg(
         short = 'x',
         long,
         value_name = "FILE",
-        help = "The token file for token mutations",
         help_heading = "Fuzz Options",
     )]
     pub tokens: Vec<PathBuf>,
 
+    /// If not set, the child's stdout and stderror will be redirected to /dev/null
     #[arg(
         short,
         long,
-        help = "If not set, the child's stdout and stderror will be redirected to /dev/null",
         help_heading = "Fuzz Options"
     )]
     pub debug_child: bool,
 
+    /// The directory to read initial corpus, generate inputs if undefined
     #[arg(
         short,
         long,
         value_name = "PATH",
-        help = "The directory to read initial corpus, generate inputs if undefined",
         help_heading = "Corpus Options",
     )]
     pub input: Option<Vec<PathBuf>>,
 
+    /// The directory where solutions are stored
     #[arg(
         short,
         long,
         value_name = "PATH",
         default_value = "solutions/",
-        help = "The directory where solutions are stored",
         help_heading = "Corpus Options",
     )]
     pub output: PathBuf,
 
+    /// The directory where corpus is stored
     #[arg(
         short,
         long,
         value_name = "PATH",
         default_value = "corpus_discovered/",
-        help = "The directory where corpus is stored",
         help_heading = "Corpus Options",
     )]
     pub queue: PathBuf,
 
+    /// The number of generated inputs (used only if no input)
     #[arg(
         long,
         default_value = "20",
-        help = "The number of generated inputs (used only if no input)",
         help_heading = "Corpus Options",
     )]
     pub generate_count: usize,
 
+    /// The maximum length of generated inputs (used only if no input)
     #[arg(
         long,
         default_value = "4096",
-        help = "The maximum length of generated inputs (used only if no input)",
         help_heading = "Corpus Options",
     )]
     pub input_max_length: usize,
     
+    /// If not set, spawn broker for fuzzers
     #[arg(
         short = 'B',
         long,
-        help = "If not set, spawn broker for fuzzers",
         help_heading = "Broker Options",
     )]
     pub no_broker : bool,
 
+    /// The port broker listen to accept new instances
     #[arg(
         long,
         default_value = "1337",
         value_name = "PORT",
-        help = "The port broker listen to accept new instances",
         help_heading = "Broker Options",
     )]
     pub broker_port: u16,
     
+    /// If set, spawn message passing with remote receivers
     #[arg(
         short = 'S',
         long,
-        help = "If set, spawn message passing with remote receivers",
         help_heading = "Broker Options",
     )]
     pub spawn_client: bool,
 
+    /// The port to which nn-client will be bind
     #[arg(
         short = 'p',
         long,
         default_value = "7878",
         value_name = "PORT",
-        help = "",
         help_heading = "Broker Options",
     )]
     pub client_port: u16,
