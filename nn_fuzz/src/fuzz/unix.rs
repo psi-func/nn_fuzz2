@@ -87,7 +87,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                     }
                 }),
                 // Evol corpus
-                CachedOnDiskCorpus::<BytesInput>::new(PathBuf::from("./corpus_discovered"), 64)
+                CachedOnDiskCorpus::<BytesInput>::new(options.queue.clone(), 64)
                     .unwrap(),
                 // Solutions corpus
                 OnDiskCorpus::new_save_meta(
