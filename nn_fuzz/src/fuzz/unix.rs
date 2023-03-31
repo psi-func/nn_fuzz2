@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use super::{
     current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
     ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
@@ -65,8 +63,10 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         
         let seed = match &options.seed.vals {
             Some(vals) => {
-                let (idx, _) = options.cores.ids.iter().find_position(|&&x| x == core_id.into()).unwrap();
-                vals[idx]
+                let (_, &seed) = options.cores.ids.iter().zip(vals.iter()).find(|(&core, _)| core == core_id.into()).unwrap_or_else(|| {
+                    panic!("Cannot set seed to [Core {core_id}] from list {vals:?}");
+                });
+                seed
             },
             None => current_nanos(),
         };
