@@ -31,7 +31,9 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // AFL++ compatible shmem provider
     let shmem_provider = StdShMemProvider::new()?;
 
-    let mut run_client = |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, core_id : usize| {
+    let mut run_client = |state: Option<_>,
+                          mut mgr: LlmpRestartingEventManager<_, _>,
+                          core_id: usize| {
         let mut shmem_provider = StdShMemProvider::new()?;
         let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
         // provide shmid for forkserver
@@ -60,23 +62,30 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             // hangs
             TimeoutFeedback::new()
         );
-        
-        let seed = match &options.seed.vals {
-            Some(vals) => {
-                let (_, &seed) = options.cores.ids.iter().zip(vals.iter()).find(|(&core, _)| core == core_id.into()).unwrap_or_else(|| {
-                    panic!("Cannot set seed to [Core {core_id}] from list {vals:?}");
-                });
-                seed
-            },
-            None => current_nanos(),
-        };
-        println!("[Core {core_id}] setup seed: {seed}");
 
         // Component: State
         let mut state = state.unwrap_or_else(|| {
             StdState::new(
                 // RND
-                StdRand::with_seed(seed),
+                StdRand::with_seed(match &options.seed.vals {
+                    Some(vals) => {
+                        let (_, &seed) = options
+                            .cores
+                            .ids
+                            .iter()
+                            .zip(vals.iter())
+                            .find(|(&core, _)| core == core_id.into())
+                            .unwrap_or_else(|| {
+                                panic!("Cannot set seed to [Core {core_id}] from list {vals:?}");
+                            });
+                        println!("[Core {core_id}] setup seed: {seed}");
+                        seed
+                    }
+                    None => {
+                        println!("[Core {core_id}] setup seed: auto");
+                        current_nanos()
+                    }
+                }),
                 // Evol corpus
                 CachedOnDiskCorpus::<BytesInput>::new(PathBuf::from("./corpus_discovered"), 64)
                     .unwrap(),
