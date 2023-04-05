@@ -1,7 +1,7 @@
 use super::{
     current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
     ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
-    CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer, FuzzerOptions, HasCorpus,
+    CrashFeedback, EventConfig, ForkserverExecutor, StdFuzzer, Fuzzer, FuzzerOptions, HasCorpus,
     HitcountsMapObserver, IndexesLenTimeMinimizerScheduler, LlmpRestartingEventManager,
     MaxMapFeedback, Merge, MultiMonitor, OnDiskCorpus, QueueScheduler, RandBytesGenerator, ShMem,
     ShMemProvider, StdMapObserver, StdRand, StdScheduledMutator, StdShMemProvider, StdState,
@@ -11,9 +11,10 @@ use super::{
 #[cfg(feature = "tui")]
 use super::tui::TuiMonitor;
 
-use std::path::PathBuf;
+#[cfg(feature = "observer_feedback")]
+use crate::components::fuzzer::HeavyFuzzer;
 
-use crate::components::{fuzzer::HeavyFuzzer, stages::CustomMutationalStage};
+use crate::components::stages::CustomMutationalStage;
 use crate::error::Error;
 use crate::launcher::Launcher;
 
@@ -111,7 +112,10 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());
 
         // Component: Real Fuzzer
+        #[cfg(feature = "observer_feedback")]
         let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
+        #[cfg(not(feature = "observer_feedback"))]
+        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 
         // MUTATE arguments
         let mut harness_args = options.args.clone();

@@ -14,6 +14,7 @@ categories = ["development-tools::testing"]
 
 [features]
 default = []
+observer_feedback = []
 tui = []
 bind_public = []
 

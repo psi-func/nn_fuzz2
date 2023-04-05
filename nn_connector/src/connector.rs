@@ -57,7 +57,7 @@ impl FuzzConnector {
                 ("input".to_string(), input.bytes().to_owned()),
                 ("observers".to_string(), observers_buf),
             ]),
-            _ => HashMap::from([("input".to_string(), vec![0_u8])]),
+            _ => HashMap::from([("input".to_string(), vec![])]),
         })
     }
 }
