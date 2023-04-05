@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "nn_fuzz",
-    "nn_connector"
+    "nn_connector",
+    "nn_slave",
 ]
 
 exclude = [

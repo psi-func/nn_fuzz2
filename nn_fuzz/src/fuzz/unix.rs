@@ -1,18 +1,21 @@
 use super::{
     current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
     ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
-    CrashFeedback, EventConfig, ForkserverExecutor, StdFuzzer, Fuzzer, FuzzerOptions, HasCorpus,
+    CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer, FuzzerOptions, HasCorpus,
     HitcountsMapObserver, IndexesLenTimeMinimizerScheduler, LlmpRestartingEventManager,
     MaxMapFeedback, Merge, MultiMonitor, OnDiskCorpus, QueueScheduler, RandBytesGenerator, ShMem,
     ShMemProvider, StdMapObserver, StdRand, StdScheduledMutator, StdShMemProvider, StdState,
     TimeFeedback, TimeObserver, TimeoutFeedback, TimeoutForkserverExecutor,
 };
 
-#[cfg(feature = "tui")]
-use super::tui::TuiMonitor;
+#[cfg(not(feature = "observer_feedback"))]
+use super::StdFuzzer;
 
 #[cfg(feature = "observer_feedback")]
 use crate::components::fuzzer::HeavyFuzzer;
+
+#[cfg(feature = "tui")]
+use super::tui::TuiMonitor;
 
 use crate::components::stages::CustomMutationalStage;
 use crate::error::Error;
@@ -88,8 +91,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                     }
                 }),
                 // Evol corpus
-                CachedOnDiskCorpus::<BytesInput>::new(options.queue.clone(), 64)
-                    .unwrap(),
+                CachedOnDiskCorpus::<BytesInput>::new(options.queue.clone(), 64).unwrap(),
                 // Solutions corpus
                 OnDiskCorpus::new_save_meta(
                     options.output.clone(),
@@ -114,6 +116,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         // Component: Real Fuzzer
         #[cfg(feature = "observer_feedback")]
         let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
+
         #[cfg(not(feature = "observer_feedback"))]
         let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
 

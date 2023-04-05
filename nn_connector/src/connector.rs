@@ -6,12 +6,11 @@ use std::time::Duration;
 use crate::error::Error;
 
 use nn_lib::connector::messages::{
-    TcpRemoteNewMessage, TcpRequest, TcpResponce,
-    COMPRESS_THRESHOLD,
-    LLMP_FLAG_COMPRESSED, LLMP_FLAG_INITIALIZED,
+    TcpRemoteNewMessage, TcpRequest, TcpResponce, COMPRESS_THRESHOLD, LLMP_FLAG_COMPRESSED,
+    LLMP_FLAG_INITIALIZED,
 };
 
-use libafl::prelude::{ExitKind, EventConfig};
+use libafl::prelude::{EventConfig, ExitKind};
 use postcard;
 use serde::Serialize;
 
@@ -51,11 +50,11 @@ impl FuzzConnector {
         recv_event::<BytesInput>(&mut self.stream, &self.compressor).map(|event| match event {
             Event::NewTestcase {
                 input,
-                observers_buf: Some(observers_buf),
+                observers_buf,
                 ..
             } => HashMap::from([
                 ("input".to_string(), input.bytes().to_owned()),
-                ("observers".to_string(), observers_buf),
+                ("observers".to_string(), observers_buf.unwrap_or(vec![])),
             ]),
             _ => HashMap::from([("input".to_string(), vec![])]),
         })
@@ -67,7 +66,11 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
 
     // 1 - receive hello from fuzzer
     recv_tcp_msg(&mut stream)
-        .and_then(|buf| buf.try_into().or(Err(Error::serialize_error("Hello message serialize error".into()))))
+        .and_then(|buf| {
+            buf.try_into().or(Err(Error::serialize_error(
+                "Hello message serialize error".into(),
+            )))
+        })
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteFuzzerHello { .. } = msg {
                 Ok(())
@@ -86,7 +89,11 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
 
     // 3 - wait for accepting
     let client_id = recv_tcp_msg(&mut stream)
-        .and_then(|buf| buf.try_into().or(Err(Error::serialize_error("Accept message serialize error".into()))))
+        .and_then(|buf| {
+            buf.try_into().or(Err(Error::serialize_error(
+                "Accept message serialize error".into(),
+            )))
+        })
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteNNAccepted { client_id } = msg {
                 Ok(client_id)
@@ -109,14 +116,14 @@ pub fn generate_event(
     compressor: &GzipCompressor,
     buf: &[u8],
 ) -> Result<TcpRemoteNewMessage, Error> {
-    let event = Event::<BytesInput>::NewTestcase { 
-        input: BytesInput::from(buf), 
-        observers_buf: None, 
-        exit_kind: ExitKind::Ok, 
-        corpus_size: 0, 
-        client_config: EventConfig::AlwaysUnique, 
-        time: Duration::from_millis(1), 
-        executions: 0, 
+    let event = Event::<BytesInput>::NewTestcase {
+        input: BytesInput::from(buf),
+        observers_buf: None,
+        exit_kind: ExitKind::Ok,
+        corpus_size: 0,
+        client_config: EventConfig::AlwaysUnique,
+        time: Duration::from_millis(1),
+        executions: 0,
     };
 
     let serialized = postcard::to_allocvec(&event)?;
@@ -160,9 +167,8 @@ pub fn recv_event<I: Input>(
         &msg.payload
     };
 
-    postcard::from_bytes(event_bytes.as_slice()).map_err(|_e| {
-        Error::serialize_error("not Event<BytesInput> message".to_string())
-    })
+    postcard::from_bytes(event_bytes.as_slice())
+        .map_err(|_e| Error::serialize_error("not Event<BytesInput> message".to_string()))
 }
 
 // helper functions

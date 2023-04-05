@@ -90,6 +90,100 @@ where
     }
 }
 
+impl<CS, F, OF, OT> ExecutionProcessor<OT> for HeavyFuzzer<CS, F, OF, OT>
+where
+    CS: Scheduler,
+    F: Feedback<CS::State>,
+    OF: Feedback<CS::State>,
+    OT: ObserversTuple<CS::State> + Serialize + DeserializeOwned,
+    CS::State: HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions,
+{
+    fn process_execution<EM>(
+        &mut self,
+        state: &mut Self::State,
+        manager: &mut EM,
+        input: <Self::State as UsesInput>::Input,
+        observers: &OT,
+        exit_kind: &ExitKind,
+        send_events: bool,
+    ) -> Result<(ExecuteInputResult, Option<usize>), Error>
+    where
+        EM: EventFirer<State = Self::State>,
+    {
+        let mut res = ExecuteInputResult::None;
+
+        let is_solution = self
+            .objective_mut()
+            .is_interesting(state, manager, &input, observers, exit_kind)?;
+
+        if is_solution {
+            res = ExecuteInputResult::Solution;
+        } else {
+            let is_corpus = self
+                .feedback_mut()
+                .is_interesting(state, manager, &input, observers, exit_kind)?;
+
+            if is_corpus {
+                res = ExecuteInputResult::Corpus;
+            }
+        }
+
+        match res {
+            ExecuteInputResult::None => {
+                self.feedback_mut().discard_metadata(state, &input)?;
+                self.objective_mut().discard_metadata(state, &input)?;
+
+                Ok((res, None))
+            }
+            ExecuteInputResult::Solution => {
+                self.feedback_mut().discard_metadata(state, &input)?;
+
+                let mut testcase = Testcase::with_executions(input, *state.executions());
+                self.objective_mut().append_metadata(state, &mut testcase)?;
+                state.solutions_mut().add(testcase)?;
+
+                if send_events {
+                    manager.fire(
+                        state,
+                        Event::Objective {
+                            objective_size: state.solutions().count(),
+                        },
+                    )?;
+                }
+
+                Ok((res, None))
+            }
+            ExecuteInputResult::Corpus => {
+                self.objective_mut().discard_metadata(state, &input)?;
+
+                let mut testcase = Testcase::with_executions(input.clone(), *state.executions());
+                self.feedback_mut().append_metadata(state, &mut testcase)?;
+                let idx = state.corpus_mut().add(testcase)?;
+                self.scheduler_mut().on_add(state, idx)?;
+
+                let observers_buf = Some(manager.serialize_observers(observers)?);
+
+                if send_events {
+                    manager.fire(
+                        state,
+                        Event::NewTestcase {
+                            input,
+                            observers_buf,
+                            exit_kind: *exit_kind,
+                            corpus_size: state.corpus().count(),
+                            client_config: manager.configuration(),
+                            time: current_time(),
+                            executions: *state.executions(),
+                        },
+                    )?;
+                }
+
+                Ok((res, Some(idx)))
+            }
+        }
+    }
+}
+
 impl<CS, F, OF, OT> EvaluatorObservers<OT> for HeavyFuzzer<CS, F, OF, OT>
 where
     CS: Scheduler,
@@ -317,99 +411,5 @@ where
         mark_feature_time!(state, PerfFeature::PostExecObservers);
 
         Ok(exit_kind)
-    }
-}
-
-impl<CS, F, OF, OT> ExecutionProcessor<OT> for HeavyFuzzer<CS, F, OF, OT>
-where
-    CS: Scheduler,
-    F: Feedback<CS::State>,
-    OF: Feedback<CS::State>,
-    OT: ObserversTuple<CS::State> + Serialize + DeserializeOwned,
-    CS::State: HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions,
-{
-    fn process_execution<EM>(
-        &mut self,
-        state: &mut Self::State,
-        manager: &mut EM,
-        input: <Self::State as UsesInput>::Input,
-        observers: &OT,
-        exit_kind: &ExitKind,
-        send_events: bool,
-    ) -> Result<(ExecuteInputResult, Option<usize>), Error>
-    where
-        EM: EventFirer<State = Self::State>,
-    {
-        let mut res = ExecuteInputResult::None;
-
-        let is_solution = self
-            .objective_mut()
-            .is_interesting(state, manager, &input, observers, exit_kind)?;
-
-        if is_solution {
-            res = ExecuteInputResult::Solution;
-        } else {
-            let is_corpus = self
-                .feedback_mut()
-                .is_interesting(state, manager, &input, observers, exit_kind)?;
-
-            if is_corpus {
-                res = ExecuteInputResult::Corpus;
-            }
-        }
-
-        match res {
-            ExecuteInputResult::None => {
-                self.feedback_mut().discard_metadata(state, &input)?;
-                self.objective_mut().discard_metadata(state, &input)?;
-
-                Ok((res, None))
-            }
-            ExecuteInputResult::Solution => {
-                self.feedback_mut().discard_metadata(state, &input)?;
-
-                let mut testcase = Testcase::with_executions(input, *state.executions());
-                self.objective_mut().append_metadata(state, &mut testcase)?;
-                state.solutions_mut().add(testcase)?;
-
-                if send_events {
-                    manager.fire(
-                        state,
-                        Event::Objective {
-                            objective_size: state.solutions().count(),
-                        },
-                    )?;
-                }
-
-                Ok((res, None))
-            }
-            ExecuteInputResult::Corpus => {
-                self.objective_mut().discard_metadata(state, &input)?;
-
-                let mut testcase = Testcase::with_executions(input.clone(), *state.executions());
-                self.feedback_mut().append_metadata(state, &mut testcase)?;
-                let idx = state.corpus_mut().add(testcase)?;
-                self.scheduler_mut().on_add(state, idx)?;
-
-                let observers_buf = Some(manager.serialize_observers(observers)?);
-
-                if send_events {
-                    manager.fire(
-                        state,
-                        Event::NewTestcase {
-                            input,
-                            observers_buf,
-                            exit_kind: *exit_kind,
-                            corpus_size: state.corpus().count(),
-                            client_config: manager.configuration(),
-                            time: current_time(),
-                            executions: *state.executions(),
-                        },
-                    )?;
-                }
-
-                Ok((res, Some(idx)))
-            }
-        }
     }
 }

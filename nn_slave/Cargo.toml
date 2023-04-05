@@ -1,8 +1,8 @@
 [package]
-name = "nn_fuzz"
+name = "nn_slave"
 version.workspace = true
 authors = ["Maxim Shalagin <shalaginx998@yandex.ru>"]
-description = "Fuzzer for executables with neural network backend"
+description = "Fuzzer with neural network inside"
 repository = "https://git.mobiledep.ru/iifuzzing/nn_fuzz/"
 readme = "../README.md"
 license = "MIT OR Apache-2.0"
@@ -22,18 +22,7 @@ bind_public = []
 libafl = { path = "../../LibAFL/libafl", features = [] }
 libafl_cc = { path = "../../LibAFL/libafl_cc", features = [] }
 
-mimalloc = { version = "0.1" }
-clap = { version = "4.1", features = ["derive"] }
-dotenv = { version = "0.15" }
-serde = { version = "1.0", features = ["derive"] }
-serde_repr = { version = "0.1" }
-serde_json = { version = "1.0" }
-postcard = { version = "1.0" }
-itertools = { version = "0.10" }
-typed-builder = { version = "0.10" }
-ahash = { version = "0.7" }
-hashbrown = { version = "0.12" }
-tokio = { version = "1.24", features = ["full"] }
 
-[target.'cfg(unix)'.dependencies]
-libc = {version = "0.2"}
+# libc = {registry = "stc", version = "*"}
+# tok = {registry = "stc", package = "tokio", version = "*"}
+# ds =  {package = "polars", version = "*"}
