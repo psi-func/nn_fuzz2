@@ -19,8 +19,7 @@ tui = []
 bind_public = []
 
 [dependencies]
-# libafl = { path = "../../LibAFL/libafl", features = [] }
-libafl = { version = "0.9.0" }
+libafl = { path = "../../LibAFL/libafl", version = "0.9", features = [] }
 
 mimalloc = { version = "0.1" }
 clap = { version = "4.1", features = ["derive"] }

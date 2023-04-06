@@ -19,8 +19,7 @@ tui = []
 bind_public = []
 
 [dependencies]
-libafl = { path = "../../LibAFL/libafl", features = [] }
-libafl_cc = { path = "../../LibAFL/libafl_cc", features = [] }
+libafl = { path = "../../LibAFL/libafl", version = "0.9", features = [] }
 
 
 # libc = {registry = "stc", version = "*"}
