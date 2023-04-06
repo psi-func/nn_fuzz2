@@ -60,7 +60,7 @@ where
         let broker_things = |mut broker: LlmpNnEventBroker<S::Input, MT, SP>, remote_nn_port| {
             if let Some(nn_port) = remote_nn_port {
                 println!("B2b: Connecting to {:?}", &nn_port);
-                broker.spawn_client(nn_port)?;
+                broker.spawn_client(nn_port);
             };
 
             broker.broker_loop()

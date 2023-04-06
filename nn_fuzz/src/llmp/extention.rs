@@ -15,14 +15,13 @@ use libafl::events::EventRestarter;
 use libafl::inputs::{Input, UsesInput};
 use libafl::monitors::Monitor;
 use libafl::prelude::{
-    ClientId, EventConfig, EventFirer, EventManager, EventManagerId, EventProcessor, Executor,
+    EventConfig, EventFirer, EventManager, EventManagerId, EventProcessor, Executor,
     GzipCompressor, HasEventManagerId, HasObservers, LlmpBroker, LlmpClient, LlmpClientDescription,
-    LlmpMsgHookResult, LlmpSharedMap, ProgressReporter, ShMem, ShMemDescription, StateRestorer,
+    LlmpMsgHookResult, ProgressReporter, StateRestorer,
 };
 use libafl::state::{HasClientPerfMonitor, HasExecutions, HasMetadata, UsesState};
 use libafl::{Error, EvaluatorObservers, ExecutionProcessor};
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot::channel;
 
 use crate::connector::server::run_service;
 
@@ -307,9 +306,11 @@ where
     }
 }
 
-#[repr(transparent)]
 #[derive(Debug)]
-struct LlmpNnBroker<SP: ShMemProvider + 'static>(LlmpBroker<SP>);
+struct LlmpNnBroker<SP: ShMemProvider + 'static> {
+    port: u16,
+    broker: LlmpBroker<SP>,
+}
 
 impl<SP> Deref for LlmpNnBroker<SP>
 where
@@ -318,7 +319,7 @@ where
     type Target = LlmpBroker<SP>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.broker
     }
 }
 
@@ -327,7 +328,7 @@ where
     SP: ShMemProvider + 'static,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.broker
     }
 }
 
@@ -336,49 +337,16 @@ where
     SP: ShMemProvider + 'static,
 {
     pub fn create_attach_to_tcp(shmem_provider: SP, port: u16) -> Result<Self, Error> {
-        Ok(LlmpNnBroker(LlmpBroker::create_attach_to_tcp(
-            shmem_provider,
-            port,
-        )?))
+        let broker = LlmpBroker::create_attach_to_tcp(shmem_provider, port)?;
+
+        Ok(LlmpNnBroker { port, broker })
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn spawn_client(&mut self, port: u16) -> Result<(), Error> {
-        let map_description = Self::nn_thread_on(
-            port,
-            self.0.llmp_clients.len() as ClientId,
-            &self
-                .0
-                .llmp_out
-                .out_shmems
-                .first()
-                .unwrap()
-                .shmem
-                .description(),
-        )?;
-
-        let new_shmem = LlmpSharedMap::existing(
-            self.0
-                .shmem_provider()
-                .shmem_from_description(map_description)?,
-        );
-
-        {
-            self.0.register_client(new_shmem);
-        }
-
-        Ok(())
+    pub fn spawn_client(&mut self, port: u16) {
+        Self::nn_thread_on(self.port, port);
     }
 
-    fn nn_thread_on(
-        port: u16,
-        client_id: ClientId,
-        broker_shmem_description: &ShMemDescription,
-    ) -> Result<ShMemDescription, Error> {
-        let broker_shmem_description = *broker_shmem_description;
-
-        let (send, recv) = channel();
-
+    fn nn_thread_on(broker_port: u16, port: u16){
         thread::spawn(move || {
             tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(3)
@@ -386,15 +354,11 @@ where
                 .build()
                 .unwrap()
                 .block_on(async move {
-                    run_service::<SP>(send, broker_shmem_description, client_id, port).await;
+                    run_service(broker_port, port).await;
                 });
         });
 
         
-
-        recv.blocking_recv().map_err(|_| {
-            Error::unknown("Error launching background thread for nn communication".to_string())
-        })
     }
 }
 
@@ -425,8 +389,8 @@ where
         })
     }
 
-    pub fn spawn_client(&mut self, port: u16) -> Result<(), Error> {
-        self.llmp.spawn_client(port)
+    pub fn spawn_client(&mut self, port: u16) {
+        self.llmp.spawn_client(port);
     }
 
     pub fn broker_loop(&mut self) -> Result<(), Error> {
@@ -476,7 +440,7 @@ where
                 let client = monitor.client_stats_mut_for(client_id);
                 client.update_corpus_size(*corpus_size as u64);
                 client.update_executions(*executions as u64, *time);
-                monitor.display(event.name().to_string(), client_id);
+                monitor.display("Testcase".to_string(), client_id);
                 Ok(BrokerEventResult::Forward)
             }
             Event::UpdateExecStats {
@@ -487,7 +451,7 @@ where
                 // TODO: The monitor buffer should be added on client add.
                 let client = monitor.client_stats_mut_for(client_id);
                 client.update_executions(*executions as u64, *time);
-                monitor.display(event.name().to_string(), client_id);
+                monitor.display("Stats".to_string(), client_id);
                 Ok(BrokerEventResult::Handled)
             }
             Event::UpdateUserStats {
@@ -497,13 +461,13 @@ where
             } => {
                 let client = monitor.client_stats_mut_for(client_id);
                 client.update_user_stats(name.clone(), value.clone());
-                monitor.display(event.name().to_string(), client_id);
+                monitor.display("Stats".to_string(), client_id);
                 Ok(BrokerEventResult::Handled)
             }
             Event::Objective { objective_size } => {
                 let client = monitor.client_stats_mut_for(client_id);
                 client.update_objective_size(*objective_size as u64);
-                monitor.display(event.name().to_string(), client_id);
+                monitor.display("Objective".to_string(), client_id);
                 Ok(BrokerEventResult::Handled)
             }
             Event::Log {

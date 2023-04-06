@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use libafl::{
     bolts::current_time,
-    corpus::{Corpus, Testcase},
+    corpus::{Corpus, Testcase, CorpusId},
     events::{Event, EventFirer},
     executors::{Executor, ExitKind, HasObservers},
     feedbacks::Feedback,
@@ -42,13 +42,15 @@ where
     type State = CS::State;
 }
 
-impl<CS, F, OF, OT> HasScheduler<CS> for HeavyFuzzer<CS, F, OF, OT>
+impl<CS, F, OF, OT> HasScheduler for HeavyFuzzer<CS, F, OF, OT>
 where
     CS: Scheduler,
     F: Feedback<CS::State>,
     OF: Feedback<CS::State>,
     CS::State: HasClientPerfMonitor,
 {
+    type Scheduler = CS;
+
     fn scheduler(&self) -> &CS {
         &self.scheduler
     }
@@ -58,13 +60,15 @@ where
     }
 }
 
-impl<CS, F, OF, OT> HasFeedback<F> for HeavyFuzzer<CS, F, OF, OT>
+impl<CS, F, OF, OT> HasFeedback for HeavyFuzzer<CS, F, OF, OT>
 where
     CS: Scheduler,
     F: Feedback<CS::State>,
     OF: Feedback<CS::State>,
     CS::State: HasClientPerfMonitor,
 {
+    type Feedback = F;
+
     fn feedback(&self) -> &F {
         &self.feedback
     }
@@ -74,13 +78,15 @@ where
     }
 }
 
-impl<CS, F, OF, OT> HasObjective<OF> for HeavyFuzzer<CS, F, OF, OT>
+impl<CS, F, OF, OT> HasObjective for HeavyFuzzer<CS, F, OF, OT>
 where
     CS: Scheduler,
     F: Feedback<CS::State>,
     OF: Feedback<CS::State>,
     CS::State: HasClientPerfMonitor,
 {
+    type Objective = OF;
+
     fn objective(&self) -> &OF {
         &self.objective
     }
@@ -106,7 +112,7 @@ where
         observers: &OT,
         exit_kind: &ExitKind,
         send_events: bool,
-    ) -> Result<(ExecuteInputResult, Option<usize>), Error>
+    ) -> Result<(ExecuteInputResult, Option<CorpusId>), Error>
     where
         EM: EventFirer<State = Self::State>,
     {
@@ -201,7 +207,7 @@ where
         manager: &mut EM,
         input: <Self::State as UsesInput>::Input,
         send_events: bool,
-    ) -> Result<(ExecuteInputResult, Option<usize>), Error>
+    ) -> Result<(ExecuteInputResult, Option<CorpusId>), Error>
     where
         E: Executor<EM, Self> + HasObservers<Observers = OT, State = Self::State>,
         EM: EventFirer<State = Self::State>,
@@ -231,7 +237,7 @@ where
         manager: &mut EM,
         input: <CS::State as UsesInput>::Input,
         send_events: bool,
-    ) -> Result<(ExecuteInputResult, Option<usize>), Error> {
+    ) -> Result<(ExecuteInputResult, Option<CorpusId>), Error> {
         self.evaluate_input_with_observers(state, executor, manager, input, send_events)
     }
 
@@ -242,7 +248,7 @@ where
         executor: &mut E,
         manager: &mut EM,
         input: <CS::State as UsesInput>::Input,
-    ) -> Result<usize, Error> {
+    ) -> Result<CorpusId, Error> {
         let exit_kind = self.execute_input(state, executor, manager, &input)?;
         let observers = executor.observers();
         // Always consider this to be "interesting"
@@ -293,7 +299,7 @@ where
         executor: &mut E,
         state: &mut CS::State,
         manager: &mut EM,
-    ) -> Result<usize, Error> {
+    ) -> Result<CorpusId, Error> {
         // Init timer for scheduler
         #[cfg(feature = "introspection")]
         state.introspection_monitor_mut().start_timer();
@@ -334,6 +340,7 @@ where
     OF: Feedback<CS::State>,
     CS::State: UsesInput + HasExecutions + HasClientPerfMonitor,
 {
+    #[allow(dead_code)]
     /// Create a new `StdFuzzer` with standard behavior.
     pub fn new(scheduler: CS, feedback: F, objective: OF) -> Self {
         Self {

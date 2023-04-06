@@ -45,7 +45,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
 
         // Component: Observers
         let edges_observer =
-            HitcountsMapObserver::new(StdMapObserver::new("edges", shmem.as_mut_slice()));
+            HitcountsMapObserver::new(unsafe { StdMapObserver::new("edges", shmem.as_mut_slice()) });
 
         let time_observer = TimeObserver::new("time");
 
@@ -55,7 +55,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             // max map feedback linked to edges observer
             MaxMapFeedback::new_tracking(&edges_observer, true, false),
             // time feedback (dont need feedback state)
-            TimeFeedback::new_with_observer(&time_observer)
+            TimeFeedback::with_observer(&time_observer)
         );
 
         // Component: Objective
@@ -93,9 +93,9 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                 // Evol corpus
                 CachedOnDiskCorpus::<BytesInput>::new(options.queue.clone(), 64).unwrap(),
                 // Solutions corpus
-                OnDiskCorpus::new_save_meta(
+                OnDiskCorpus::with_meta_format(
                     options.output.clone(),
-                    Some(ondisk::OnDiskMetadataFormat::JsonPretty),
+                    ondisk::OnDiskMetadataFormat::JsonPretty,
                 )
                 .unwrap(),
                 // ----------

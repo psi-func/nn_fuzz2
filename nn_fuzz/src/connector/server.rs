@@ -1,20 +1,21 @@
 use tokio;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::oneshot::Sender;
 
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::net::TcpStream as StdTcpStream;
 use std::time::Duration;
 
-use libafl::bolts::llmp::{ClientId, LlmpDescription, LlmpReceiver, LlmpSender};
-use libafl::bolts::shmem::{ShMem, ShMemDescription, ShMemProvider};
+use libafl::bolts::llmp::{ClientId, LlmpClient, LlmpConnection};
+use libafl::bolts::shmem::{ShMemProvider, StdShMemProvider};
 use libafl::Error;
 
 use serde::{Deserialize, Serialize};
 
-use super::messages::{TcpRequest, TcpResponce, TcpRemoteNewMessage, FuzzerDescription, LLMP_FLAG_FROM_NN};
+use super::messages::{
+    FuzzerDescription, TcpRemoteNewMessage, TcpRequest, TcpResponce, LLMP_FLAG_FROM_NN,
+};
 
 const _MAX_WORKING_THREADS: usize = 2;
 const _LLMP_NN_BLOCK_TIME: Duration = Duration::from_millis(3_000);
@@ -54,16 +55,11 @@ struct NNDescription {
     nn_version: String,
 }
 
-/// 
+///
 /// # Panics
 ///    panics if port is already used bu other process
 ///
-pub async fn run_service<SP: ShMemProvider + 'static>(
-    sender: Sender<ShMemDescription>,
-    broker_shmem_description: ShMemDescription,
-    _client_id: ClientId,
-    port: u16,
-) {
+pub async fn run_service(broker_port: u16, port: u16) {
     let listener = Listener::Tcp(
         TcpListener::bind((_BIND_ADDR, port))
             .await
@@ -78,8 +74,6 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
             fuzz_target: String::new(),
         },
     };
-
-    let mut sender = Some(sender);
 
     loop {
         match listener.accept().await {
@@ -115,37 +109,31 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
                         nn_name,
                         nn_version,
                     } => {
-                        if let Some(send) = sender.take() {
-                            let client_id = u32::MAX;
+                        tokio::task::spawn_blocking(move || -> Result<(), Error> {
+                            // prepare stream
+                            let mut stream = transform_stream(stream).expect("Cannot transform stream");
 
-                            let msg = TcpResponce::RemoteNNAccepted { client_id };
+                            let shmem_provider = StdShMemProvider::new()?;
+                            let mut nn_connector = NnConnector::new(shmem_provider, broker_port)?;
+                            
+                            let msg = TcpResponce::RemoteNNAccepted { client_id: nn_connector.id() };
 
-                            if let Err(_e) = send_tcp_message(&mut stream, &msg).await {
-                                println!("Cannot send message");
+                            if let Err(_e) = send_tcp_msg(&mut stream, &msg) {
+                                println!("Error while sending accept packet");
                             }
 
-                            tokio::task::spawn_blocking(move || {
-                                let mut nn_connector: NnConnector<SP> =
-                                    NnConnector::new(broker_shmem_description, client_id, send);
+                            let description = NNDescription {
+                                nn_name,
+                                nn_version,
+                            };
 
-                                let description = NNDescription {
-                                    nn_name,
-                                    nn_version,
-                                };
-
-                                nn_connector.handle_connection(stream, &description);
-                            });
-                        } else {
-                            eprintln!("Can only connect with one nn");
-                        }
+                            nn_connector.handle_connection(stream, &description);
+                            Ok(())
+                        });
                     }
                     // local fuzzer connection
-                    TcpRequest::LocalHello { client_id } => {
-                        tokio::spawn(async move {
-                            let mut fuzz_connector = InstanceConnector::new(client_id);
-
-                            fuzz_connector.handle_connection(stream).await;
-                        });
+                    TcpRequest::LocalHello { client_id: _ } => {
+                        unimplemented!()
                     }
                 }
             }
@@ -158,81 +146,41 @@ pub async fn run_service<SP: ShMemProvider + 'static>(
     }
 }
 
-struct InstanceConnector {
-    _id: ClientId,
-}
-
-impl InstanceConnector {
-    fn new(client_id: ClientId) -> Self {
-        InstanceConnector { _id: client_id }
-    }
-
-    async fn handle_connection(&mut self, _stream: TcpStream) {
-        // setup
-
-        loop {} // end loop
-    }
-}
-
 struct NnConnector<SP: ShMemProvider + 'static> {
-    id: ClientId,
-    receiver: LlmpReceiver<SP>,
-    sender: LlmpSender<SP>,
+    mock_fuzzer: LlmpClient<SP>,
 }
 
 impl<SP> NnConnector<SP>
 where
     SP: ShMemProvider + 'static,
 {
-    fn new(
-        broker_shmem_desc: ShMemDescription,
-        client_id: ClientId,
-        send: Sender<ShMemDescription>,
-    ) -> Self {
-        let shmem_provider_bg = SP::new().unwrap();
-
-        let new_sender = match LlmpSender::new(shmem_provider_bg.clone(), client_id, false) {
-            Ok(new_sender) => new_sender,
-            Err(e) => {
-                panic!("NN connector: Could not map shared map: {e}");
-            }
-        };
-
-        send.send(new_sender.out_shmems.first().unwrap().shmem.description())
-            .expect("NN connector: Error sending map description to channel!");
-
-        let local_receiver = LlmpReceiver::on_existing_from_description(
-            shmem_provider_bg,
-            &LlmpDescription {
-                last_message_offset: None,
-                shmem: broker_shmem_desc,
-            },
-        )
-        .expect("NN connector: Failed to map local page in nn connector thread");
-
-        NnConnector {
-            id: client_id,
-            receiver: local_receiver,
-            sender: new_sender,
+    fn new(shmem_provider: SP, broker_port: u16) -> Result<Self, Error> {
+        let client = LlmpConnection::client_on_port(shmem_provider, broker_port)?;
+        if let LlmpConnection::IsClient { client } = client {
+            Ok(Self {
+                mock_fuzzer: client,
+            })
+        } else {
+            unreachable!()
         }
     }
 
-    fn handle_connection(&mut self, stream: TcpStream, _desc: &NNDescription) {
-        // prepare stream
-        let mut stream = transform_stream(stream).expect("Cannot transform stream");
-
+    fn handle_connection(&mut self, stream: StdTcpStream, _desc: &NNDescription) {
+        let mut stream = stream;
         stream
             .set_read_timeout(Some(_LLMP_NN_BLOCK_TIME))
             .expect("Failed to set tcp stream timeout");
 
+        let id = self.id();
         loop {
             // first, forward all data we have.
+
             while let Some((client_id, tag, flags, payload)) = self
-                .receiver
+                .mock_fuzzer
                 .recv_buf_with_flags()
                 .expect("Error reading from local page!")
             {
-                if client_id == self.id {
+                if client_id == id {
                     // println!(
                     //     "Ignored message we probably sent earlier (same id), TAG: {:x}",
                     //     tag
@@ -264,11 +212,15 @@ where
                     .try_into()
                     .expect("Illegal message received from nn - shutting down.");
 
-                self.sender
+                self.mock_fuzzer
                     .send_buf_with_flags(msg.tag, msg.flags | LLMP_FLAG_FROM_NN, &msg.payload)
                     .expect("B2B: Error forwarding message. Exiting.");
             }
         } // end loop
+    }
+
+    fn id(&self) -> ClientId {
+        self.mock_fuzzer.sender.id
     }
 }
 

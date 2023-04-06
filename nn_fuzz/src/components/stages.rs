@@ -15,7 +15,9 @@ use libafl::{
     mark_feature_time,
     mutators::Mutator,
     observers::ObserversTuple,
-    prelude::UserStats,
+    monitors::UserStats,
+    inputs::UsesInput,
+    corpus::CorpusId,
     stages::Stage,
     start_timer,
     state::{
@@ -30,7 +32,7 @@ use serde::{Deserialize, Serialize};
 pub trait MutationalStage<E, EM, M, Z, OT>: Stage<E, EM, Z>
 where
     E: UsesState<State = Self::State> + HasObservers<Observers = OT>,
-    M: Mutator<Self::State>,
+    M: Mutator<<Self as UsesInput>::Input, Self::State>,
     EM: UsesState<State = Self::State> + EventFirer,
     OT: ObserversTuple<Self::State> + Serialize,
     Z: ExecutesInput<E, EM, State = Self::State> + ExecutionProcessor<OT>,
@@ -43,7 +45,7 @@ where
     fn mutator_mut(&mut self) -> &mut M;
 
     /// Gets the number of iteration this mutator should run for.
-    fn iterations(&self, state: &mut Z::State, corpus_idx: usize) -> Result<usize, Error>;
+    fn iterations(&self, state: &mut Z::State, corpus_idx: CorpusId) -> Result<usize, Error>;
 
     /// Runs stage for testcase
     fn perform_mutational(
@@ -52,7 +54,7 @@ where
         executor: &mut E,
         state: &mut Z::State,
         manager: &mut EM,
-        corpus_idx: usize,
+        corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         let num = self.iterations(state, corpus_idx)?;
 
@@ -136,7 +138,7 @@ where
 impl<E, EM, M, Z, OT> Stage<E, EM, Z> for CustomMutationalStage<E, EM, M, Z, OT>
 where
     E: UsesState<State = Z::State> + HasObservers<Observers = OT>,
-    M: Mutator<Z::State>,
+    M: Mutator<Z::Input, Z::State>,
     EM: UsesState<State = Z::State> + EventFirer,
     OT: ObserversTuple<Z::State> + Serialize,
     Z: ExecutesInput<E, EM> + ExecutionProcessor<OT>,
@@ -149,7 +151,7 @@ where
         executor: &mut E,
         state: &mut Self::State,
         manager: &mut EM,
-        corpus_idx: usize,
+        corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         self.perform_mutational(fuzzer, executor, state, manager, corpus_idx)
     }
@@ -158,7 +160,7 @@ where
 impl<E, EM, M, Z, OT> MutationalStage<E, EM, M, Z, OT> for CustomMutationalStage<E, EM, M, Z, OT>
 where
     E: UsesState<State = Z::State> + HasObservers<Observers = OT>,
-    M: Mutator<Z::State>,
+    M: Mutator<Z::Input, Z::State>,
     EM: UsesState<State = Z::State> + EventFirer,
     OT: ObserversTuple<Z::State> + Serialize,
     Z: ExecutesInput<E, EM> + ExecutionProcessor<OT>,
@@ -173,7 +175,7 @@ where
         &mut self.mutator
     }
 
-    fn iterations(&self, state: &mut <Z>::State, _corpus_idx: usize) -> Result<usize, Error> {
+    fn iterations(&self, state: &mut <Z>::State, _corpus_idx: CorpusId) -> Result<usize, Error> {
         Ok(1 + state.rand_mut().below(DEFAULT_MUTATIONAL_MAX_ITERATIONS) as usize)
     }
 
@@ -183,7 +185,7 @@ where
         executor: &mut E,
         state: &mut <Z>::State,
         manager: &mut EM,
-        corpus_idx: usize,
+        corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         let num = self.iterations(state, corpus_idx)?;
 

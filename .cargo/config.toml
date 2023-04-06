@@ -1,5 +1,9 @@
+[net]
+git-fetch-with-cli = true
+
 [registries]
 stc = { index = "http://10.128.0.9:1234/git/index" }
+nexus = { index =  "https://packages.mobiledep.ru/repository/cargo-hosted/index" }
 
 # [registry]
 # default = "stc"
