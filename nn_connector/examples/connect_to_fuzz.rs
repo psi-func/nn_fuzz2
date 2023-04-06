@@ -3,6 +3,8 @@ use nn_connector::connector::FuzzConnector;
 fn main() {
     let mut conn = FuzzConnector::new(7878).expect("Cannot connect");
 
+    println!("Connected to fuzzer with id: {}", conn.id());
+
     loop {
         match conn.recv_testcase() {
             Ok(res) => {
