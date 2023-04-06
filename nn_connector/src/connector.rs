@@ -59,6 +59,11 @@ impl FuzzConnector {
             _ => HashMap::from([("input".to_string(), vec![])]),
         })
     }
+
+    pub fn id(&self) -> ClientId {
+        self.client_id
+    }
+
 }
 
 pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {

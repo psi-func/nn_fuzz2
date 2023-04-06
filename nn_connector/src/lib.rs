@@ -61,6 +61,10 @@ impl PyFuzzConnector {
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
+
+    pub fn id(&self) -> u32 {
+        self.0.id()
+    }
 }
 
 
