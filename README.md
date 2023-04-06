@@ -17,6 +17,9 @@ Small toolchain for fuzzing with nn power
     - Python (>= 3.7) (only for client)
 
     - LibAFL
+
+    **NOTE:** nn_fuzz ^0.2.0 depends on LibAFL 0.9
+
     Clone from [link](https://github.com/AFLplusplus/LibAFL)
 
 2. Build projects:
