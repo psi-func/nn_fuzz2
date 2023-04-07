@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
-use libafl::prelude::{ClientId, Flags, Tag};
-
 /// Messages to init connection
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TcpResponce {
