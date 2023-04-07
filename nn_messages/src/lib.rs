@@ -24,7 +24,8 @@ pub mod passive;
 ///
 /// # Errors
 ///    
-///  ``illegal_state`` if length is more than u32
+///  ``Error::IOError`` if length is more than u32
+///  ``Error::NotAvailable`` if timeout exceeds
 pub fn send_tcp_msg<T>(stream: &mut TcpStream, msg: &T) -> Result<(), Error>
 where
     T: Serialize,
@@ -42,8 +43,9 @@ where
 /// Receive one message of `u32` len and `[u8; len]` bytes
 ///
 /// # Errors
-///
-/// ``illegal_state`` if length is more than u32
+///    
+///  ``Error::IOError`` if length is more than u32
+///  ``Error::NotAvailable`` if timeout exceeds
 pub fn recv_tcp_msg(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
     // Always receive one be u32 of size, then the command.
     let mut size_bytes = [0_u8; 4];
