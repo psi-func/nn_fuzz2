@@ -31,6 +31,7 @@ where
     /// manager.
     shmem_provider: SP,
     /// The configuration
+    #[allow(dead_code)]
     configuration: EventConfig,
     /// The monitor to use
     #[builder(default = None)]
