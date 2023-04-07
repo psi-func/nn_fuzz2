@@ -13,8 +13,9 @@ use libafl::Error;
 
 use serde::{Deserialize, Serialize};
 
-use super::messages::{
-    FuzzerDescription, TcpRemoteNewMessage, TcpRequest, TcpResponce, LLMP_FLAG_FROM_NN,
+use nn_messages::{
+    passive::{FuzzerDescription, TcpRemoteNewMessage, TcpRequest, TcpResponce},
+    LLMP_FLAG_FROM_NN,
 };
 
 const _MAX_WORKING_THREADS: usize = 2;
@@ -111,12 +112,15 @@ pub async fn run_service(broker_port: u16, port: u16) {
                     } => {
                         tokio::task::spawn_blocking(move || -> Result<(), Error> {
                             // prepare stream
-                            let mut stream = transform_stream(stream).expect("Cannot transform stream");
+                            let mut stream =
+                                transform_stream(stream).expect("Cannot transform stream");
 
                             let shmem_provider = StdShMemProvider::new()?;
                             let mut nn_connector = NnConnector::new(shmem_provider, broker_port)?;
-                            
-                            let msg = TcpResponce::RemoteNNAccepted { client_id: nn_connector.id() };
+
+                            let msg = TcpResponce::RemoteNNAccepted {
+                                client_id: nn_connector.id(),
+                            };
 
                             if let Err(_e) = send_tcp_msg(&mut stream, &msg) {
                                 println!("Error while sending accept packet");

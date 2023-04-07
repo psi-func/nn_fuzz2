@@ -19,6 +19,7 @@ tui = []
 bind_public = []
 
 [dependencies]
+nn_messages = { path = "../nn_messages", version = "0.2"}
 libafl = { workspace = true }
 
 mimalloc = { version = "0.1" }

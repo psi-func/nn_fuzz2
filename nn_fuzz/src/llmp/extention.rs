@@ -23,7 +23,7 @@ use libafl::state::{HasClientPerfMonitor, HasExecutions, HasMetadata, UsesState}
 use libafl::{Error, EvaluatorObservers, ExecutionProcessor};
 use serde::{Deserialize, Serialize};
 
-use crate::connector::server::run_service;
+use crate::connector::run_service;
 
 const LLMP_TAG_EVENT_TO_BOTH: Tag = 0x002B_0741;
 

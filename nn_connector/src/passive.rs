@@ -1,22 +1,16 @@
 use std::collections::HashMap;
-use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
 use crate::error::Error;
 
-use nn_lib::connector::messages::{
-    TcpRemoteNewMessage, TcpRequest, TcpResponce, COMPRESS_THRESHOLD, LLMP_FLAG_COMPRESSED,
-    LLMP_FLAG_INITIALIZED,
+use nn_messages::{
+    passive::{TcpRemoteNewMessage, TcpRequest, TcpResponce},
+    recv_tcp_msg, send_tcp_msg, COMPRESS_THRESHOLD, LLMP_FLAG_COMPRESSED, LLMP_FLAG_INITIALIZED,
 };
 
-use libafl::prelude::{EventConfig, ExitKind};
-use postcard;
-use serde::Serialize;
-
-#[allow(unused)]
 use libafl::prelude::{
-    BytesInput, ClientId, Event, Flags, GzipCompressor, HasBytesVec, Input, Tag,
+    BytesInput, ClientId, Event, EventConfig, ExitKind, Flags, GzipCompressor, HasBytesVec, Input,
 };
 
 const _LLMP_NN_BLOCK_TIME: Duration = Duration::from_millis(3_000);
@@ -43,7 +37,7 @@ impl FuzzConnector {
 
     pub fn send_input(&mut self, input: &[u8]) -> Result<(), Error> {
         let testcase = generate_event(self.client_id, &self.compressor, input)?;
-        send_tcp_msg(&mut self.stream, &testcase)
+        send_tcp_msg(&mut self.stream, &testcase).map_err(Error::from)
     }
 
     pub fn recv_testcase(&mut self) -> Result<HashMap<String, Vec<u8>>, Error> {
@@ -66,15 +60,13 @@ impl FuzzConnector {
     }
 }
 
-pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
+fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
 
     // 1 - receive hello from fuzzer
     recv_tcp_msg(&mut stream)
-        .and_then(|buf| {
-            buf.try_into()
-                .map_err(|_| Error::serialize_error("Hello message serialize error".into()))
-        })
+        .and_then(std::convert::TryInto::try_into)
+        .map_err(Error::from)
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteFuzzerHello { .. } = msg {
                 Ok(())
@@ -93,10 +85,8 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
 
     // 3 - wait for accepting
     let client_id = recv_tcp_msg(&mut stream)
-        .and_then(|buf| {
-            buf.try_into()
-                .map_err(|_| Error::serialize_error("Accept message serialize error".into()))
-        })
+        .and_then(std::convert::TryInto::try_into)
+        .map_err(Error::from)
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteNNAccepted { client_id } = msg {
                 Ok(client_id)
@@ -114,7 +104,7 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
     Ok((stream, client_id))
 }
 
-pub fn generate_event(
+fn generate_event(
     client_id: ClientId,
     compressor: &GzipCompressor,
     buf: &[u8],
@@ -151,7 +141,7 @@ pub fn generate_event(
 }
 
 /// Assumed that stream has timeout enabled
-pub fn recv_event<I: Input>(
+fn recv_event<I: Input>(
     stream: &mut TcpStream,
     compressor: &GzipCompressor,
 ) -> Result<Event<I>, Error> {
@@ -172,40 +162,4 @@ pub fn recv_event<I: Input>(
 
     postcard::from_bytes(event_bytes.as_slice())
         .map_err(|_e| Error::serialize_error("not Event<BytesInput> message".to_string()))
-}
-
-// helper functions
-fn send_tcp_msg<T>(stream: &mut TcpStream, msg: &T) -> Result<(), Error>
-where
-    T: Serialize,
-{
-    let msg = postcard::to_allocvec(msg)?;
-    if msg.len() > u32::MAX as usize {
-        return Err(Error::illegal_state(format!(
-            "Trying to send message a tcp message > u32! (size: {})",
-            msg.len()
-        )));
-    }
-
-    let size_bytes = (msg.len() as u32).to_be_bytes();
-    stream.write_all(&size_bytes)?;
-    stream.write_all(&msg)?;
-
-    Ok(())
-}
-
-/// Receive one message of `u32` len and `[u8; len]` bytes
-fn recv_tcp_msg(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
-    // Always receive one be u32 of size, then the command.
-
-    let mut size_bytes = [0_u8; 4];
-    stream.read_exact(&mut size_bytes)?;
-    let size = u32::from_be_bytes(size_bytes);
-    let mut bytes = vec![];
-    bytes.resize(size as usize, 0_u8);
-
-    stream
-        .read_exact(&mut bytes)
-        .expect("Failed to read message body");
-    Ok(bytes)
 }

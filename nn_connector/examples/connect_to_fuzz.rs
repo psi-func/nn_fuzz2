@@ -1,4 +1,4 @@
-use nn_connector::connector::FuzzConnector;
+use nn_connector::passive::FuzzConnector;
 
 fn main() {
     let mut conn = FuzzConnector::new(7878).expect("Cannot connect");

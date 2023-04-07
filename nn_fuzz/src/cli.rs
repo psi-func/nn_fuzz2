@@ -3,9 +3,6 @@ use std::time::Duration;
 
 use clap::{self, Parser};
 
-#[allow(unused_imports)]
-use serde::{Deserialize, Serialize};
-
 use libafl::{Error, prelude::Cores};
 
 use crate::utils::seed::Seeds;

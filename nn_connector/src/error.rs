@@ -1,8 +1,6 @@
 use std::io;
 
-use serde::Deserialize;
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum Error {
     IOError(String),
     NotAvailable(),
@@ -29,7 +27,7 @@ impl std::fmt::Display for Error {
             }
             Self::CompressionError(e) => {
                 writeln!(f, "Compression error: {e}")
-            },
+            }
             Self::NotAvailable() => {
                 writeln!(f, "Resource is unavailable")
             }
@@ -38,17 +36,16 @@ impl std::fmt::Display for Error {
 }
 
 impl Error {
-    
     #[must_use]
     pub fn invalid_format(e: String) -> Self {
         Self::InvalidFormat(e)
     }
-    
+
     #[must_use]
     pub fn illegal_state(e: String) -> Self {
         Self::IllegalState(e)
     }
-    
+
     #[must_use]
     pub fn serialize_error(e: String) -> Self {
         Self::SerializeError(e)
@@ -59,7 +56,6 @@ impl Error {
         Self::IOError(e)
     }
 
-
     #[must_use]
     pub fn compression_error(e: String) -> Self {
         Self::CompressionError(e)
@@ -69,7 +65,6 @@ impl Error {
     pub fn not_available() -> Self {
         Self::NotAvailable()
     }
-    
 }
 
 impl From<postcard::Error> for Error {
@@ -87,10 +82,22 @@ impl From<io::Error> for Error {
 impl From<libafl::Error> for Error {
     fn from(e: libafl::Error) -> Self {
         match e {
-            libafl::Error::Compression(_) => Self::compression_error("error while compressing buffer".to_string()),
+            libafl::Error::Compression(_) => {
+                Self::compression_error("error while compressing buffer".to_string())
+            }
             _ => {
                 unreachable!()
             }
+        }
+    }
+}
+
+impl From<nn_messages::error::Error> for Error {
+    fn from(e: nn_messages::error::Error) -> Self {
+        match e {
+            nn_messages::error::Error::SerializeError(msg) => Self::serialize_error(msg),
+            nn_messages::error::Error::IOError(msg) => Self::io_error(msg),
+            nn_messages::error::Error::NotAvailable() => Self::not_available(),
         }
     }
 }

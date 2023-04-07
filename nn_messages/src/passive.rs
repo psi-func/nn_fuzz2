@@ -1,14 +1,7 @@
 use serde::{Deserialize, Serialize};
-use postcard::Error as Error;
+use crate::error::Error;
 
 use libafl::prelude::{ClientId, Flags, Tag};
-
-pub const LLMP_FLAG_INITIALIZED: Flags = 0x0;
-pub const LLMP_FLAG_FROM_NN: Flags = 0x4;
-pub const LLMP_FLAG_COMPRESSED: Flags = 0x1;
-
-/// The minimum buffer size at which to compress LLMP IPC messages.
-pub const COMPRESS_THRESHOLD: usize = 1024;
 
 /// Messages for nn connection.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -27,7 +20,7 @@ impl TryFrom<&Vec<u8>> for TcpRemoteNewMessage {
     type Error = Error;
 
     fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(bytes)
+        postcard::from_bytes(bytes).map_err(Error::from)
     }
 }
 
@@ -35,7 +28,7 @@ impl TryFrom<Vec<u8>> for TcpRemoteNewMessage {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(&bytes)
+        postcard::from_bytes(&bytes).map_err(Error::from)
     }
 }
 
@@ -61,7 +54,7 @@ impl TryFrom<&Vec<u8>> for TcpResponce {
     type Error = Error;
 
     fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(bytes.as_slice())
+        postcard::from_bytes(bytes.as_slice()).map_err(Error::from)
     }
 }
 
@@ -69,7 +62,7 @@ impl TryFrom<Vec<u8>> for TcpResponce {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(bytes.as_slice())
+        postcard::from_bytes(bytes.as_slice()).map_err(Error::from)
     }
 }
 
@@ -93,7 +86,7 @@ impl TryFrom<Vec<u8>> for TcpRequest {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(bytes.as_slice())
+        postcard::from_bytes(bytes.as_slice()).map_err(Error::from)
     }
 }
 
@@ -101,7 +94,7 @@ impl TryFrom<&Vec<u8>> for TcpRequest {
     type Error = Error;
 
     fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
-        postcard::from_bytes(bytes.as_slice())
+        postcard::from_bytes(bytes.as_slice()).map_err(Error::from)
     }
 }
 

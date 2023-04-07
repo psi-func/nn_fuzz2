@@ -1,0 +1,21 @@
+[package]
+name = "nn_messages"
+version = "0.2.0"
+authors = ["Maxim Shalagin <shalaginx998@yandex.ru>"]
+description = "Protocol messages"
+repository = "https://git.mobiledep.ru/iifuzzing/nn_fuzz/"
+readme = "../README.md"
+license = "MIT OR Apache-2.0"
+keywords = ["utilities"]
+categories = ["encoding"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = []
+
+[dependencies]
+libafl = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+postcard = { version = "1.0" }
