@@ -15,13 +15,8 @@ categories = ["development-tools::testing"]
 [features]
 default = []
 observer_feedback = []
-tui = []
-bind_public = []
 
 [dependencies]
 libafl = { workspace = true }
-
-
-# libc = {registry = "stc", version = "*"}
-# tok = {registry = "stc", package = "tokio", version = "*"}
-# ds =  {package = "polars", version = "*"}
+serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.1", features = ["derive"] }
