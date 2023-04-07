@@ -54,16 +54,16 @@ impl FuzzConnector {
                 ..
             } => HashMap::from([
                 ("input".to_string(), input.bytes().to_owned()),
-                ("observers".to_string(), observers_buf.unwrap_or(vec![])),
+                ("observers".to_string(), observers_buf.unwrap_or_default()),
             ]),
             _ => HashMap::from([("input".to_string(), vec![])]),
         })
     }
 
+    #[must_use]
     pub fn id(&self) -> ClientId {
         self.client_id
     }
-
 }
 
 pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
@@ -72,9 +72,8 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
     // 1 - receive hello from fuzzer
     recv_tcp_msg(&mut stream)
         .and_then(|buf| {
-            buf.try_into().or(Err(Error::serialize_error(
-                "Hello message serialize error".into(),
-            )))
+            buf.try_into()
+                .map_err(|_| Error::serialize_error("Hello message serialize error".into()))
         })
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteFuzzerHello { .. } = msg {
@@ -95,9 +94,8 @@ pub fn connect_to_fuzzer(port: u16) -> Result<(TcpStream, ClientId), Error> {
     // 3 - wait for accepting
     let client_id = recv_tcp_msg(&mut stream)
         .and_then(|buf| {
-            buf.try_into().or(Err(Error::serialize_error(
-                "Accept message serialize error".into(),
-            )))
+            buf.try_into()
+                .map_err(|_| Error::serialize_error("Accept message serialize error".into()))
         })
         .and_then(|msg: TcpResponce| {
             if let TcpResponce::RemoteNNAccepted { client_id } = msg {

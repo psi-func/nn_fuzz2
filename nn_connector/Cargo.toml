@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 nn_lib = { package = "nn_fuzz", path = "../nn_fuzz" }
 pyo3 = { version = "0.17", features = ["extension-module"] }
-libafl = { path = "../../LibAFL/libafl", version = "0.9" }
+libafl = { workspace = true }
 serde = { version = "1.0" }
 serde_json = { version = "1.0" }
 postcard = { version = "1.0", features = ["alloc"] }

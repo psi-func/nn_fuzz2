@@ -343,10 +343,8 @@ where
     }
 
     pub fn spawn_client(&mut self, port: u16) {
-        Self::nn_thread_on(self.port, port);
-    }
+        let broker_port = self.port;
 
-    fn nn_thread_on(broker_port: u16, port: u16){
         thread::spawn(move || {
             tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(3)
@@ -357,8 +355,6 @@ where
                     run_service(broker_port, port).await;
                 });
         });
-
-        
     }
 }
 
@@ -393,15 +389,16 @@ where
         self.llmp.spawn_client(port);
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub fn broker_loop(&mut self) -> Result<(), Error> {
         let monitor = &mut self.monitor;
         let compressor = &self.compressor;
         self.llmp.loop_forever(
-            &mut |client_id: u32, tag: Tag, _flags: Flags, msg: &[u8]| {
+            &mut |client_id: u32, tag: Tag, flags: Flags, msg: &[u8]| {
                 if tag == LLMP_TAG_EVENT_TO_BOTH {
                     let compressed;
 
-                    let event_bytes = if _flags & LLMP_FLAG_COMPRESSED == LLMP_FLAG_COMPRESSED {
+                    let event_bytes = if flags & LLMP_FLAG_COMPRESSED == LLMP_FLAG_COMPRESSED {
                         compressed = compressor.decompress(msg)?;
                         &compressed
                     } else {
@@ -422,6 +419,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn handle_in_broker(
         monitor: &mut MT,
         client_id: u32,
