@@ -1,7 +1,7 @@
 use core::mem::size_of;
 use libafl::prelude::{
     tuple_list, tuple_list_type, Error, HasBytesVec, HasMaxSize, HasRand, MutationResult, Mutator,
-    MutatorsTuple, Named, Rand, buffer_self_copy, buffer_set,
+    MutatorsTuple, Named, Rand, buffer_self_copy, buffer_set
 };
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
@@ -10,7 +10,7 @@ pub struct NnMutator<I, MT, S>
 where
     MT: MutatorsTuple<I, S>,
 {
-    pub hotbytes: Vec<u32>,
+    hotbytes: Vec<u32>,
     mutations: MT,
     phantom: PhantomData<(I, S)>,
 }
@@ -33,7 +33,8 @@ where
 impl<I, MT, S> NnMutator<I, MT, S>
 where
     MT: MutatorsTuple<I, S>,
-{
+{   
+    #[must_use]
     pub fn new(mutations: MT) -> Self {
         Self {
             hotbytes: Vec::default(),
@@ -42,6 +43,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     pub fn hotbytes(&self) -> &Vec<u32> {
         &self.hotbytes
     }
@@ -94,6 +96,9 @@ pub type RlMutationTuple = tuple_list_type!(
     WordAddMutator,
     DwordAddMutator,
     QwordAddMutator,
+    ByteInterestingMutator,
+    WordInterestingMutator,
+    DwordInterestingMutator,
 );
 
 pub fn rl_mutations() -> RlMutationTuple {
@@ -105,6 +110,9 @@ pub fn rl_mutations() -> RlMutationTuple {
         WordAddMutator::new(),
         DwordAddMutator::new(),
         QwordAddMutator::new(),
+        ByteInterestingMutator::new(),
+        WordInterestingMutator::new(),
+        DwordInterestingMutator::new(),
     )
 }
 
@@ -186,6 +194,9 @@ macro_rules! add_mutator_impl {
                         2 => val.swap_bytes().wrapping_add(num).swap_bytes(),
                         _ => val.swap_bytes().wrapping_sub(num).swap_bytes(),
                     };
+                    // set bytes to mutated value
+                    let new_bytes = &mut input.bytes_mut()[index..index + size_of::<$size>()];
+                    new_bytes.copy_from_slice(&new_val.to_ne_bytes());
                     Ok(MutationResult::Mutated)
                 }
             }

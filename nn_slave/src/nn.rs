@@ -83,9 +83,8 @@ where
             Ok(prediction) => Some(prediction),
             Err(e) => {
                 match e {
-                    mpsc::error::TryRecvError::Empty => None,
                     // maybe respawn neural network
-                    mpsc::error::TryRecvError::Disconnected => None,
+                    mpsc::error::TryRecvError::Disconnected | mpsc::error::TryRecvError::Empty => None,
                 }
             }
         }
@@ -112,7 +111,8 @@ where
 impl<I> NnService<I>
 where
     I: Input + std::marker::Send + 'static,
-{
+{   
+    #[allow(dead_code)]
     fn new(send: mpsc::Sender<PredictResult>, recv: mpsc::Receiver<Task<I>>) -> Self {
         Self {
             send,

@@ -196,7 +196,7 @@ where
 
         if let Some(PredictResult { id, heatmap }) = self.neural_network.hotbytes() {
             // mutations for hotbytes
-            self.nn_mutator.hotbytes = heatmap;
+            *self.nn_mutator.hotbytes_mut() = heatmap;
 
             let num = self.iterations(state, id)?;
             let mut diffs: Vec<u32> = Vec::with_capacity(num);
@@ -213,7 +213,7 @@ where
             for i in 0..num {
                 let mut input = input.clone();
 
-                self.nn_mutator.mutate(state, &mut input, 0)?;
+                self.nn_mutator.mutate(state, &mut input, i as i32)?;
 
                 // execute
                 let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
@@ -236,7 +236,7 @@ where
                         .sum(),
                 );
 
-                let (_, corpus_idx) =
+                let (_, _corpus_idx) =
                     fuzzer.process_execution(state, manager, input, observers, &exit_kind, true)?;
             }
 
