@@ -138,6 +138,15 @@ pub struct SlaveOptions {
         value_name = "PORT",
         help_heading = "Connect Options",
     )]
+    pub broker_port: u16,
+
+    /// The NN connector port to connect with  
+    #[arg(
+        long,
+        default_value = "7879",
+        value_name = "PORT",
+        help_heading = "Connect Options",
+    )]
     pub port: u16,
 }
 

@@ -143,7 +143,7 @@ pub(super) fn fuzz(options: &SlaveOptions) -> Result<(), Error> {
         let mutator =
             StdScheduledMutator::with_max_stack_pow(havoc_mutations().merge(tokens_mutations()), 6);
 
-        let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
+        let mut stages = tuple_list!(CustomMutationalStage::new(mutator, options));
 
         // RUUUN!
         fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
@@ -160,7 +160,7 @@ pub(super) fn fuzz(options: &SlaveOptions) -> Result<(), Error> {
         .cores(&Cores::from(std::slice::from_ref(&options.core)))
         .stdout_file(options.stdout.as_deref())
         .spawn_broker(false)
-        .broker_port(options.port)
+        .broker_port(options.broker_port)
         .build()
         .launch()
 }
