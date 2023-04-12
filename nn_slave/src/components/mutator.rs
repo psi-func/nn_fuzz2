@@ -4,8 +4,9 @@
 use crate::{
     cli::SlaveOptions,
     nn::mutatios::{rl_mutations, NnMutator, RlMutationTuple},
-    nn::{NeuralNetwork, PredictResult},
+    nn::{NeuralNetwork, TaskCompletion},
 };
+
 use core::marker::PhantomData;
 
 use libafl::{
@@ -20,12 +21,12 @@ use libafl::{
     monitors::UserStats,
     mutators::Mutator,
     observers::ObserversTuple,
-    prelude::{AsSlice, HasBytesVec, HitcountsMapObserver, MapObserver, StdMapObserver},
+    prelude::{AsSlice, HasBytesVec, HitcountsMapObserver, MapObserver, StdMapObserver, MutationResult},
     stages::Stage,
     start_timer,
     state::{
-        HasClientPerfMonitor, HasCorpus, HasExecutions, HasMetadata, HasRand, HasSolutions,
-        UsesState, HasMaxSize,
+        HasClientPerfMonitor, HasCorpus, HasExecutions, HasMaxSize, HasMetadata, HasRand,
+        HasSolutions, UsesState,
     },
     Error, ExecutionProcessor, SerdeAny,
 };
@@ -103,27 +104,28 @@ where
     Z: UsesState,
     Z::State: HasRand + HasMaxSize,
     Z::Input: HasBytesVec + std::marker::Send + 'static,
-    {
-        pub fn new(mutator: M, options: &SlaveOptions) -> Self {
-            Self {
-                neural_network: NeuralNetwork::new(options),
-                counter: 0,
-                blocker: false,
-                nn_mutator: NnMutator::new(rl_mutations()),
-                mutator,
-                max_depth: 0,
-                phantom: PhantomData,
-            }
+{
+    pub fn new(mutator: M, options: &SlaveOptions) -> Self {
+        Self {
+            neural_network: NeuralNetwork::new(options),
+            counter: 0,
+            blocker: false,
+            nn_mutator: NnMutator::new(rl_mutations()),
+            mutator,
+            max_depth: 0,
+            phantom: PhantomData,
         }
     }
-    
-    impl<E, EM, M, Z, OT> UsesState for CustomMutationalStage<E, EM, M, Z, OT>
-    where
+}
+
+impl<E, EM, M, Z, OT> UsesState for CustomMutationalStage<E, EM, M, Z, OT>
+where
     E: UsesState<State = Z::State>,
     EM: UsesState<State = Z::State>,
     Z: ExecutesInput<E, EM>,
     Z::Input: HasBytesVec,
-    Z::State: HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions + HasRand + HasMaxSize,
+    Z::State:
+        HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions + HasRand + HasMaxSize,
 {
     type State = Z::State;
 }
@@ -135,8 +137,13 @@ where
     EM: UsesState<State = Z::State> + EventFirer,
     OT: ObserversTuple<Z::State> + Serialize,
     Z: ExecutesInput<E, EM> + ExecutionProcessor<OT>,
-    Z::State:
-        HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions + HasRand + HasMaxSize + HasMetadata,
+    Z::State: HasClientPerfMonitor
+        + HasCorpus
+        + HasSolutions
+        + HasExecutions
+        + HasRand
+        + HasMaxSize
+        + HasMetadata,
     Z::Input: HasBytesVec + std::marker::Send + 'static,
 {
     fn perform(
@@ -158,8 +165,13 @@ where
     EM: UsesState<State = Z::State> + EventFirer,
     OT: ObserversTuple<Z::State> + Serialize,
     Z: ExecutesInput<E, EM> + ExecutionProcessor<OT>,
-    Z::State:
-        HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions + HasRand + HasMetadata + HasMaxSize,
+    Z::State: HasClientPerfMonitor
+        + HasCorpus
+        + HasSolutions
+        + HasExecutions
+        + HasRand
+        + HasMetadata
+        + HasMaxSize,
     Z::Input: HasBytesVec + std::marker::Send + 'static,
 {
     fn mutator(&self) -> &M {
@@ -194,59 +206,72 @@ where
             self.blocker = true;
         }
 
-        if let Some(PredictResult { id, heatmap }) = self.neural_network.hotbytes() {
-            // mutations for hotbytes
-            *self.nn_mutator.hotbytes_mut() = heatmap;
-
-            let num = self.iterations(state, id)?;
-            let mut diffs: Vec<u32> = Vec::with_capacity(num);
-
-            let input = state.corpus().get(id)?.borrow_mut().load_input()?.clone();
-
-            let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
-            let observers = executor.observers();
-            let edges = observers
-                .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
-                .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
-            let original_map = edges.to_vec();
-
-            for i in 0..num {
-                let mut input = input.clone();
-
-                self.nn_mutator.mutate(state, &mut input, i as i32)?;
-
-                // execute
-                let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
+        match self.neural_network.nn_responce() {
+            None => {},
+            Some(TaskCompletion::NnDropped) => {
+                println!("Neural network dropped, renew connection");
+                self.blocker = false;
+            }
+            Some(TaskCompletion::Prediction { id, heatmap }) => {
+                self.blocker = false;
+                // mutations for hotbytes
+    
+                *self.nn_mutator.hotbytes_mut() = heatmap;
+    
+                let num = self.iterations(state, id)?;
+                let mut diffs: Vec<u32> = Vec::with_capacity(num);
+    
+                let input = state.corpus().get(id)?.borrow_mut().load_input()?.clone();
+    
+                let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
                 let observers = executor.observers();
                 let edges = observers
                     .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
                     .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
+                let original_map = edges.to_vec();
+                
+                let mut skipped_counter = 0;
 
-                diffs.push(
-                    original_map
-                        .iter()
-                        .zip(edges.as_slice().iter())
-                        .filter_map(|(&orig, &i)| {
-                            if u32::from(orig) < u32::from(i) {
-                                Some(u32::from(i - orig))
-                            } else {
-                                None
-                            }
-                        })
-                        .sum(),
-                );
-
-                let (_, _corpus_idx) =
-                    fuzzer.process_execution(state, manager, input, observers, &exit_kind, true)?;
+                for i in 0..num {
+                    let mut input = input.clone();
+                    if let MutationResult::Skipped = self.nn_mutator.mutate(state, &mut input, i as i32)? {
+                        skipped_counter += 1;
+                    }
+    
+                    // execute
+                    let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
+                    let observers = executor.observers();
+                    let edges = observers
+                        .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
+                        .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
+    
+                    diffs.push(
+                        original_map
+                            .iter()
+                            .zip(edges.as_slice().iter())
+                            .filter_map(|(&orig, &i)| {
+                                if u32::from(orig) < u32::from(i) {
+                                    Some(u32::from(i - orig))
+                                } else {
+                                    None
+                                }
+                            })
+                            .sum(),
+                    );
+    
+                    let (_, _corpus_idx) =
+                        fuzzer.process_execution(state, manager, input, observers, &exit_kind, true)?;
+                }
+    
+                let length = diffs.len();
+                let sum_diffs = diffs.iter().fold(0_u64, |sum, &i| sum + u64::from(i));
+                let reward = sum_diffs as f64 / length as f64;
+                self.neural_network
+                    .reward(reward)?;
+                
+                println!("Send reward to neural network {reward}, mutations: {num}, skipped: {skipped_counter}, diffs: {diffs:?}");
+                return Ok(());
             }
-
-            let length = diffs.len();
-            let sum_diffs = diffs.into_iter().fold(0_u64, |sum, i| sum + u64::from(i));
-            self.neural_network
-                .reward(sum_diffs as f64 / length as f64)?;
-
-            self.blocker = false;
-            return Ok(());
         }
 
         let num = self.iterations(state, corpus_idx)?;

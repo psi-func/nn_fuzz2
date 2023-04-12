@@ -15,6 +15,7 @@ use crate::{cli::SlaveOptions, error::Error};
 
 pub mod mutatios;
 
+#[derive(Debug)]
 pub enum Task<I>
 where
     I: Input,
@@ -23,9 +24,10 @@ where
     Rate { score: f64 },
 }
 
-pub struct PredictResult {
-    pub(crate) id: CorpusId,
-    pub(crate) heatmap: Vec<u32>,
+#[derive(Debug)]
+pub enum TaskCompletion {
+    Prediction { id: CorpusId, heatmap: Vec<u32> },
+    NnDropped,
 }
 
 #[derive(Debug)]
@@ -34,7 +36,7 @@ where
     I: Input,
 {
     send: mpsc::Sender<Task<I>>,
-    recv: mpsc::Receiver<PredictResult>,
+    recv: mpsc::Receiver<TaskCompletion>,
 }
 
 impl<I> NeuralNetwork<I>
@@ -78,13 +80,15 @@ where
         Ok(())
     }
 
-    pub fn hotbytes(&mut self) -> Option<PredictResult> {
+    pub fn nn_responce(&mut self) -> Option<TaskCompletion> {
         match self.recv.try_recv() {
             Ok(prediction) => Some(prediction),
             Err(e) => {
                 match e {
                     // maybe respawn neural network
-                    mpsc::error::TryRecvError::Disconnected | mpsc::error::TryRecvError::Empty => None,
+                    mpsc::error::TryRecvError::Disconnected | mpsc::error::TryRecvError::Empty => {
+                        None
+                    }
                 }
             }
         }
@@ -102,7 +106,7 @@ struct NnService<I>
 where
     I: Input,
 {
-    send: mpsc::Sender<PredictResult>,
+    send: mpsc::Sender<TaskCompletion>,
     recv: mpsc::Receiver<Task<I>>,
     port: u16,
     state: State,
@@ -111,9 +115,9 @@ where
 impl<I> NnService<I>
 where
     I: Input + std::marker::Send + 'static,
-{   
+{
     #[allow(dead_code)]
-    fn new(send: mpsc::Sender<PredictResult>, recv: mpsc::Receiver<Task<I>>) -> Self {
+    fn new(send: mpsc::Sender<TaskCompletion>, recv: mpsc::Receiver<Task<I>>) -> Self {
         Self {
             send,
             recv,
@@ -124,7 +128,7 @@ where
 
     fn on_port(
         port: u16,
-        send: mpsc::Sender<PredictResult>,
+        send: mpsc::Sender<TaskCompletion>,
         recv: mpsc::Receiver<Task<I>>,
     ) -> Self {
         Self {
@@ -158,14 +162,14 @@ where
 
                 // 2 - get nn info
                 #[allow(irrefutable_let_patterns)]
-                let _req = recv_tcp_message(&mut ss)
+                let nn_name = recv_tcp_message(&mut ss)
                     .await
                     .map_err(MsgError::from)
                     .and_then(std::convert::TryInto::try_into)
                     .map_err(|e| Error::serialize(format!("NNService: incorrect message: {e}")))
                     .and_then(|msg: TcpRequest| {
-                        if let TcpRequest::Hello { name: _ } = &msg {
-                            Ok(msg)
+                        if let TcpRequest::Hello { name } = msg {
+                            Ok(name)
                         } else {
                             Err(Error::illegal_state(
                                 "NNService: Incorrrect message type while handshaking!".to_string(),
@@ -178,11 +182,19 @@ where
 
                 // Ok, go further
                 stream = Some(ss);
+                println!("Nn {nn_name} connected to fuzzer");
                 self.state = State::Active;
             }
 
             if let State::Active = self.state {
-                self.handle_connection(stream.as_mut().unwrap()).await?;
+                match self.handle_connection(stream.as_mut().unwrap()).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        eprintln!("Some error with client {e} restarting...");
+                        self.send.send(TaskCompletion::NnDropped).await.unwrap();
+                        self.state = State::Listening;
+                    }
+                }
             }
         }
     }
@@ -215,7 +227,10 @@ where
                         })?;
 
                     // push to fuzzer
-                    self.send.send(PredictResult { id, heatmap }).await.map_err(|e| Error::illegal_state(format!("Couldn't send reward! {e}")))?;
+                    self.send
+                        .send(TaskCompletion::Prediction { id, heatmap })
+                        .await
+                        .map_err(|e| Error::illegal_state(format!("Couldn't send reward! {e}")))?;
                 }
                 Some(Task::Rate { score }) => {
                     let msg = RLProtoMessage::Reward { score };

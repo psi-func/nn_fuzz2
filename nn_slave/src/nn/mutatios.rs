@@ -174,7 +174,7 @@ macro_rules! add_mutator_impl {
                 input: &mut I,
                 hotbyte_idx: i32,
             ) -> Result<MutationResult, Error> {
-                let upper_bound = hotbyte_idx as usize - 1 + size_of::<$size>();
+                let upper_bound = hotbyte_idx as usize + size_of::<$size>() - 1;
                 if upper_bound >= input.bytes().len() {
                     Ok(MutationResult::Skipped)
                 } else {

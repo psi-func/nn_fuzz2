@@ -21,3 +21,6 @@ libafl = { workspace = true }
 nn_messages = { path = "../nn_messages", version = "0.2" }
 pyo3 = { version = "0.17", features = ["extension-module"] }
 postcard = { version = "1.0", features = ["alloc"] }
+
+[dev-dependencies]
+rand = { version = "0.8" }
