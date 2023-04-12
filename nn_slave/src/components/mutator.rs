@@ -21,7 +21,9 @@ use libafl::{
     monitors::UserStats,
     mutators::Mutator,
     observers::ObserversTuple,
-    prelude::{AsSlice, HasBytesVec, HitcountsMapObserver, MapObserver, StdMapObserver, MutationResult},
+    prelude::{
+        AsSlice, HasBytesVec, HitcountsMapObserver, MapObserver, MutationResult, StdMapObserver,
+    },
     stages::Stage,
     start_timer,
     state::{
@@ -207,7 +209,7 @@ where
         }
 
         match self.neural_network.nn_responce() {
-            None => {},
+            None => {}
             Some(TaskCompletion::NnDropped) => {
                 println!("Neural network dropped, renew connection");
                 self.blocker = false;
@@ -215,36 +217,38 @@ where
             Some(TaskCompletion::Prediction { id, heatmap }) => {
                 self.blocker = false;
                 // mutations for hotbytes
-    
+
                 *self.nn_mutator.hotbytes_mut() = heatmap;
-    
+
                 let num = self.iterations(state, id)?;
                 let mut diffs: Vec<u32> = Vec::with_capacity(num);
-    
+
                 let input = state.corpus().get(id)?.borrow_mut().load_input()?.clone();
-    
+
                 let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
                 let observers = executor.observers();
                 let edges = observers
                     .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
                     .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
                 let original_map = edges.to_vec();
-                
+
                 let mut skipped_counter = 0;
 
                 for i in 0..num {
                     let mut input = input.clone();
-                    if let MutationResult::Skipped = self.nn_mutator.mutate(state, &mut input, i as i32)? {
+                    if let MutationResult::Skipped =
+                        self.nn_mutator.mutate(state, &mut input, i as i32)?
+                    {
                         skipped_counter += 1;
                     }
-    
+
                     // execute
                     let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
                     let observers = executor.observers();
                     let edges = observers
                         .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
                         .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
-    
+
                     diffs.push(
                         original_map
                             .iter()
@@ -258,17 +262,17 @@ where
                             })
                             .sum(),
                     );
-    
-                    let (_, _corpus_idx) =
-                        fuzzer.process_execution(state, manager, input, observers, &exit_kind, true)?;
+
+                    let (_, _corpus_idx) = fuzzer
+                        .process_execution(state, manager, input, observers, &exit_kind, true)?;
                 }
-    
+
                 let length = diffs.len();
-                let sum_diffs = diffs.iter().fold(0_u64, |sum, &i| sum + u64::from(i));
-                let reward = sum_diffs as f64 / length as f64;
-                self.neural_network
-                    .reward(reward)?;
-                
+                #[allow(clippy::cast_precision_loss)]
+                let reward =
+                    diffs.iter().fold(0_u64, |sum, &i| sum + u64::from(i)) as f64 / length as f64;
+                self.neural_network.reward(reward)?;
+
                 println!("Send reward to neural network {reward}, mutations: {num}, skipped: {skipped_counter}, diffs: {diffs:?}");
                 return Ok(());
             }
