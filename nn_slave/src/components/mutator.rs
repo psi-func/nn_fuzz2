@@ -254,7 +254,7 @@ where
                             .iter()
                             .zip(edges.as_slice().iter())
                             .filter_map(|(&orig, &i)| {
-                                if u32::from(orig) < u32::from(i) {
+                                if orig < i {
                                     Some(u32::from(i - orig))
                                 } else {
                                     None
