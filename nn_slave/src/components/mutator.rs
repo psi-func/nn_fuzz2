@@ -198,12 +198,12 @@ where
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         if !self.blocker {
-            let input = state
+            let mut testcase = state
                 .corpus()
                 .get(corpus_idx)?
-                .borrow_mut()
-                .load_input()?
-                .clone();
+                .borrow_mut();
+            state.corpus().load_input_into(&mut testcase)?;
+            let input = testcase.input().as_ref().unwrap().clone();
             self.neural_network.predict(corpus_idx, input)?;
             self.blocker = true;
         }
@@ -223,7 +223,11 @@ where
                 let num = self.iterations(state, id)?;
                 let mut diffs: Vec<u32> = Vec::with_capacity(num);
 
-                let input = state.corpus().get(id)?.borrow_mut().load_input()?.clone();
+                let input =  {
+                    let mut testcase = state.corpus().get(id)?.borrow_mut();
+                    state.corpus().load_input_into(&mut testcase)?;
+                    testcase.input().as_ref().unwrap().clone()
+                };
 
                 let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
                 let observers = executor.observers();
@@ -284,17 +288,18 @@ where
             start_timer!(state);
 
             let exist_depth;
-            let mut input;
+            let mut input = 
             {
                 let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
                 exist_depth = if testcase.has_metadata::<MutationMeta>() {
-                    *testcase.metadata().get::<MutationMeta>().unwrap().depth()
+                    *testcase.metadata::<MutationMeta>().unwrap().depth()
                 } else {
                     testcase.add_metadata::<MutationMeta>(MutationMeta { depth: 1 });
                     1
                 };
-                input = testcase.load_input()?.clone();
-            }
+                state.corpus().load_input_into(&mut testcase)?;
+                testcase.input().as_ref().unwrap().clone()
+            };
             mark_feature_time!(state, PerfFeature::GetInputFromCorpus);
 
             start_timer!(state);

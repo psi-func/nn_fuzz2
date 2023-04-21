@@ -17,7 +17,7 @@ pub mod mutatios;
 
 #[derive(Debug)]
 pub enum Task<I>
-where
+where 
     I: Input,
 {
     Predict { id: CorpusId, input: I },

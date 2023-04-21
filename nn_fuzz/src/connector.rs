@@ -7,15 +7,13 @@ use std::net::SocketAddr;
 use std::net::TcpStream as StdTcpStream;
 use std::time::Duration;
 
-use libafl::bolts::llmp::{ClientId, LlmpClient, LlmpConnection};
-use libafl::bolts::shmem::{ShMemProvider, StdShMemProvider};
+use libafl::prelude::{ClientId, LlmpClient, LlmpConnection, ShMemProvider, StdShMemProvider};
 use libafl::Error;
 
 use serde::{Deserialize, Serialize};
 
 use nn_messages::{
     passive::{FuzzerDescription, TcpRemoteNewMessage, TcpRequest, TcpResponce},
-    LLMP_FLAG_FROM_NN,
 };
 
 const _MAX_WORKING_THREADS: usize = 2;
@@ -217,7 +215,7 @@ where
                     .expect("Illegal message received from nn - shutting down.");
 
                 self.mock_fuzzer
-                    .send_buf_with_flags(msg.tag, msg.flags | LLMP_FLAG_FROM_NN, &msg.payload)
+                    .send_buf_with_flags(msg.tag, msg.flags, &msg.payload)
                     .expect("B2B: Error forwarding message. Exiting.");
             }
         } // end loop

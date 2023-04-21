@@ -16,7 +16,7 @@ fn parse_timeout(src: &str) -> Result<Duration, Error> {
 
 #[allow(dead_code)]
 fn parse_core(src: &str) -> Result<CoreId, Error> {
-    Ok(CoreId { id: src.parse()? })
+    Ok( CoreId(src.parse()? ))
 }
 
 #[derive(Debug, Parser)]

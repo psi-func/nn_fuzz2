@@ -23,7 +23,7 @@ where
     EM: EventFirer<State = S>,
     S: HasMetadata + UsesInput,
 {
-    if state.metadata().get::<Tokens>().is_none() && !dicts.is_empty() {
+    if state.metadata::<Tokens>().is_err() && !dicts.is_empty() {
         let mut tokens = Tokens::new();
         // load tokens
         tokens = match tokens.add_from_files(dicts) {

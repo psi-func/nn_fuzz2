@@ -6,11 +6,11 @@ use crate::error::Error;
 
 use nn_messages::{
     passive::{TcpRemoteNewMessage, TcpRequest, TcpResponce},
-    recv_tcp_msg, send_tcp_msg, COMPRESS_THRESHOLD, LLMP_FLAG_COMPRESSED, LLMP_FLAG_INITIALIZED,
+    recv_tcp_msg, send_tcp_msg, COMPRESS_THRESHOLD,
 };
 
 use libafl::prelude::{
-    BytesInput, ClientId, Event, EventConfig, ExitKind, Flags, GzipCompressor, HasBytesVec, Input,
+    BytesInput, ClientId, Event, EventConfig, ExitKind, Flags, GzipCompressor, HasBytesVec, Input, LLMP_FLAG_COMPRESSED, LLMP_FLAG_INITIALIZED, Tag
 };
 
 const _LLMP_NN_BLOCK_TIME: Duration = Duration::from_millis(3_000);
@@ -55,8 +55,8 @@ impl FuzzConnector {
     }
 
     #[must_use]
-    pub fn id(&self) -> ClientId {
-        self.client_id
+    pub fn id(&self) -> u32 {
+        self.client_id.0
     }
 }
 
@@ -125,13 +125,13 @@ fn generate_event(
     let testcase = match compressor.compress(&serialized)? {
         Some(comp_buf) => TcpRemoteNewMessage {
             client_id,
-            tag: Default::default(),
+            tag: Tag(0),
             flags: flags | LLMP_FLAG_COMPRESSED,
             payload: comp_buf,
         },
         None => TcpRemoteNewMessage {
             client_id,
-            tag: Default::default(),
+            tag: Tag(0),
             flags,
             payload: serialized,
         },

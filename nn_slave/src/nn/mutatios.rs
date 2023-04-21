@@ -1,7 +1,7 @@
 use core::mem::size_of;
 use libafl::prelude::{
     tuple_list, tuple_list_type, Error, HasBytesVec, HasMaxSize, HasRand, MutationResult, Mutator,
-    MutatorsTuple, Named, Rand, buffer_self_copy, buffer_set
+    MutatorsTuple, Named, Rand, buffer_set
 };
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
@@ -74,12 +74,12 @@ where
         _stage_idx: i32,
     ) -> Result<MutationResult, Error> {
         let mut r = MutationResult::Skipped;
-        let idx = *state.rand_mut().choose(self.hotbytes.as_slice()) as usize;
-        if idx < input.bytes().len() {
+        let idx = *state.rand_mut().choose(self.hotbytes.as_slice());
+        if usize::try_from(idx)? < input.bytes().len() {
             let index = state.rand_mut().below(self.mutations().len() as u64);
             let outcome =
                 self.mutations_mut()
-                    .get_and_mutate(index.into(), state, input, idx as i32)?;
+                    .get_and_mutate(index.into(), state, input, i32::try_from(idx)?)?;
             if outcome == MutationResult::Mutated {
                 r = MutationResult::Mutated;
             }
@@ -403,7 +403,7 @@ where
         let val = input.bytes()[state.rand_mut().below(size as u64) as usize];
 
         input.bytes_mut().resize(size + len, 0);
-        buffer_self_copy(input.bytes_mut(), off, off + len, size - off);
+        unsafe { buffer_self_copy(input.bytes_mut(), off, off + len, size - off); }
         buffer_set(input.bytes_mut(), off, len, val);
 
         Ok(MutationResult::Mutated)
@@ -421,5 +421,19 @@ impl BytesInsertMutator {
     #[must_use]
     pub fn new() -> Self {
         Self
+    }
+}
+
+
+#[inline]
+unsafe fn buffer_self_copy<T>(data: &mut [T], from: usize, to: usize, len: usize) {
+    debug_assert!(!data.is_empty());
+    debug_assert!(from + len <= data.len());
+    debug_assert!(to + len <= data.len());
+    if len != 0 && from != to {
+        let ptr = data.as_mut_ptr();
+        unsafe {
+            core::ptr::copy(ptr.add(from), ptr.add(to), len);
+        }
     }
 }

@@ -53,7 +53,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         // Rate input as interesting or not
         let mut feedback = feedback_or!(
             // max map feedback linked to edges observer
-            MaxMapFeedback::new_tracking(&edges_observer, true, false),
+            MaxMapFeedback::tracking(&edges_observer, true, false),
             // time feedback (dont need feedback state)
             TimeFeedback::with_observer(&time_observer)
         );

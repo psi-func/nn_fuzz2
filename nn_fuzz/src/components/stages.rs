@@ -1,23 +1,19 @@
 #![allow(dead_code)]
-#![allow(
-    clippy::cast_possible_wrap, 
-    clippy::cast_possible_truncation
-)]
+#![allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
 
 use core::marker::PhantomData;
 
 use libafl::{
     bolts::rands::Rand,
     corpus::Corpus,
+    corpus::CorpusId,
     events::{Event, EventFirer},
     executors::HasObservers,
     fuzzer::ExecutesInput,
     mark_feature_time,
+    monitors::UserStats,
     mutators::Mutator,
     observers::ObserversTuple,
-    monitors::UserStats,
-    inputs::UsesInput,
-    corpus::CorpusId,
     stages::Stage,
     start_timer,
     state::{
@@ -28,64 +24,6 @@ use libafl::{
 };
 
 use serde::{Deserialize, Serialize};
-
-pub trait MutationalStage<E, EM, M, Z, OT>: Stage<E, EM, Z>
-where
-    E: UsesState<State = Self::State> + HasObservers<Observers = OT>,
-    M: Mutator<<Self as UsesInput>::Input, Self::State>,
-    EM: UsesState<State = Self::State> + EventFirer,
-    OT: ObserversTuple<Self::State> + Serialize,
-    Z: ExecutesInput<E, EM, State = Self::State> + ExecutionProcessor<OT>,
-    Self::State: HasClientPerfMonitor + HasCorpus + HasSolutions + HasExecutions,
-{
-    /// The mutator registered for stage
-    fn mutator(&self) -> &M;
-
-    /// The mutator registered for this stage (mutable)
-    fn mutator_mut(&mut self) -> &mut M;
-
-    /// Gets the number of iteration this mutator should run for.
-    fn iterations(&self, state: &mut Z::State, corpus_idx: CorpusId) -> Result<usize, Error>;
-
-    /// Runs stage for testcase
-    fn perform_mutational(
-        &mut self,
-        fuzzer: &mut Z,
-        executor: &mut E,
-        state: &mut Z::State,
-        manager: &mut EM,
-        corpus_idx: CorpusId,
-    ) -> Result<(), Error> {
-        let num = self.iterations(state, corpus_idx)?;
-
-        for i in 0..num {
-            start_timer!(state);
-            let mut input = state
-                .corpus()
-                .get(corpus_idx)?
-                .borrow_mut()
-                .load_input()?
-                .clone();
-            mark_feature_time!(state, PerfFeature::GetInputFromCorpus);
-
-            start_timer!(state);
-            self.mutator_mut().mutate(state, &mut input, i as i32)?;
-            mark_feature_time!(state, PerfFeature::Mutate);
-
-            let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
-            let observers = executor.observers();
-
-            let (_, corpus_idx) =
-                fuzzer.process_execution(state, manager, input, observers, &exit_kind, true)?;
-
-            start_timer!(state);
-            self.mutator_mut().post_exec(state, i as i32, corpus_idx)?;
-            mark_feature_time!(state, PerfFeature::MutatePostExec);
-        }
-
-        Ok(())
-    }
-}
 
 #[derive(Serialize, Deserialize, SerdeAny, Debug, Clone)]
 pub struct MutationMeta {
@@ -157,7 +95,7 @@ where
     }
 }
 
-impl<E, EM, M, Z, OT> MutationalStage<E, EM, M, Z, OT> for CustomMutationalStage<E, EM, M, Z, OT>
+impl<E, EM, M, Z, OT> CustomMutationalStage<E, EM, M, Z, OT>
 where
     E: UsesState<State = Z::State> + HasObservers<Observers = OT>,
     M: Mutator<Z::Input, Z::State>,
@@ -175,8 +113,8 @@ where
         &mut self.mutator
     }
 
-    fn iterations(&self, state: &mut <Z>::State, _corpus_idx: CorpusId) -> Result<usize, Error> {
-        Ok(1 + state.rand_mut().below(DEFAULT_MUTATIONAL_MAX_ITERATIONS) as usize)
+    fn iterations(state: &mut <Z>::State, _corpus_idx: CorpusId) -> usize {
+        1 + state.rand_mut().below(DEFAULT_MUTATIONAL_MAX_ITERATIONS) as usize
     }
 
     fn perform_mutational(
@@ -187,23 +125,24 @@ where
         manager: &mut EM,
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
-        let num = self.iterations(state, corpus_idx)?;
+        let num = Self::iterations(state, corpus_idx);
 
         for i in 0..num {
             start_timer!(state);
 
             let exist_depth;
-            let mut input;
-            {
+            let mut input = {
                 let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
                 exist_depth = if testcase.has_metadata::<MutationMeta>() {
-                    *testcase.metadata().get::<MutationMeta>().unwrap().depth()
+                    *testcase.metadata::<MutationMeta>().unwrap().depth()
                 } else {
                     testcase.add_metadata::<MutationMeta>(MutationMeta { depth: 1 });
                     1
                 };
-                input = testcase.load_input()?.clone();
-            }
+                // input = Z::Input
+                state.corpus().load_input_into(&mut testcase)?;
+                testcase.input().as_ref().unwrap().clone()
+            };
             mark_feature_time!(state, PerfFeature::GetInputFromCorpus);
 
             start_timer!(state);

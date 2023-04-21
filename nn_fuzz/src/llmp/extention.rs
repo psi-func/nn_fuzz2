@@ -17,7 +17,7 @@ use libafl::monitors::Monitor;
 use libafl::prelude::{
     EventConfig, EventFirer, EventManager, EventManagerId, EventProcessor, Executor,
     GzipCompressor, HasEventManagerId, HasObservers, LlmpBroker, LlmpClient, LlmpClientDescription,
-    LlmpMsgHookResult, ProgressReporter, StateRestorer,
+    LlmpMsgHookResult, ProgressReporter, StateRestorer, ClientId,
 };
 use libafl::state::{HasClientPerfMonitor, HasExecutions, HasMetadata, UsesState};
 use libafl::{Error, EvaluatorObservers, ExecutionProcessor};
@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::connector::run_service;
 
-const LLMP_TAG_EVENT_TO_BOTH: Tag = 0x002B_0741;
+const LLMP_TAG_EVENT_TO_BOTH: Tag = Tag(0x002B_0741);
 
 /// The minimum buffer size at which to compress LLMP IPC messages.
 const COMPRESS_THRESHOLD: usize = 1024;
@@ -300,9 +300,9 @@ where
     SP: ShMemProvider,
 {
     fn mgr_id(&self) -> EventManagerId {
-        EventManagerId {
-            id: self.llmp.sender.id as usize,
-        }
+        EventManagerId (
+            self.llmp.sender.id.0 as usize
+        )
     }
 }
 
@@ -394,7 +394,7 @@ where
         let monitor = &mut self.monitor;
         let compressor = &self.compressor;
         self.llmp.loop_forever(
-            &mut |client_id: u32, tag: Tag, flags: Flags, msg: &[u8]| {
+            &mut |client_id, tag: Tag, flags: Flags, msg: &[u8]| {
                 if tag == LLMP_TAG_EVENT_TO_BOTH {
                     let compressed;
 
@@ -422,7 +422,7 @@ where
     #[allow(clippy::unnecessary_wraps)]
     fn handle_in_broker(
         monitor: &mut MT,
-        client_id: u32,
+        client_id: ClientId,
         event: &Event<I>,
     ) -> Result<BrokerEventResult, Error> {
         match &event {

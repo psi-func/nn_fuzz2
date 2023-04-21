@@ -4,14 +4,9 @@
 #![deny(clippy::all, clippy::pedantic)]
 
 use error::Error;
-use libafl::prelude::Flags;
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::net::TcpStream;
-
-pub const LLMP_FLAG_INITIALIZED: Flags = 0x0;
-pub const LLMP_FLAG_FROM_NN: Flags = 0x4;
-pub const LLMP_FLAG_COMPRESSED: Flags = 0x1;
 
 /// The minimum buffer size at which to compress LLMP IPC messages.
 pub const COMPRESS_THRESHOLD: usize = 1024;
