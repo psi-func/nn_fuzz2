@@ -47,6 +47,7 @@ pub struct SlaveOptions {
     /// The initial seed for RNG
     /// current nanos if unset
     #[arg(
+        short,
         long,
         help_heading = "Fuzz Options",
     )]
