@@ -1,5 +1,5 @@
 use libafl::prelude::{
-    compress::GzipCompressor, CorpusId, Flags, HasBytesVec, Input, LLMP_FLAG_COMPRESSED,
+    compress::GzipCompressor, CorpusId, HasBytesVec, Input, LLMP_FLAG_COMPRESSED,
     LLMP_FLAG_INITIALIZED,
 };
 
