@@ -22,7 +22,7 @@ use libafl::{
     mutators::Mutator,
     observers::ObserversTuple,
     prelude::{
-        AsSlice, HasBytesVec, HitcountsMapObserver, MapObserver, MutationResult, StdMapObserver,
+        HasBytesVec, HitcountsMapObserver, MapObserver, MutationResult, StdMapObserver,
     },
     stages::Stage,
     start_timer,
@@ -52,6 +52,9 @@ where
 
     /// Gets the number of iteration this mutator should run for.
     fn iterations(&self, state: &mut Z::State, corpus_idx: CorpusId) -> Result<usize, Error>;
+
+    /// Gets Hitcount Map from observers
+    fn map(executor: &mut E) -> Vec<u8>;
 
     /// Runs stage for testcase
     fn perform_mutational(
@@ -188,6 +191,14 @@ where
         Ok(1 + state.rand_mut().below(DEFAULT_MUTATIONAL_MAX_ITERATIONS) as usize)
     }
 
+    fn map(executor: &mut E) -> Vec<u8> {
+        let observers = executor.observers();
+        let edges = observers
+            .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
+            .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
+        edges.to_vec()
+    }
+
     #[allow(clippy::too_many_lines)]
     fn perform_mutational(
         &mut self,
@@ -198,13 +209,14 @@ where
         corpus_idx: CorpusId,
     ) -> Result<(), Error> {
         if !self.blocker {
-            let mut testcase = state
-                .corpus()
-                .get(corpus_idx)?
-                .borrow_mut();
+            let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
             state.corpus().load_input_into(&mut testcase)?;
             let input = testcase.input().as_ref().unwrap().clone();
-            self.neural_network.predict(corpus_idx, input)?;
+            drop(testcase);
+            let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
+            let map = Self::map(executor);
+
+            self.neural_network.predict(corpus_idx, input, map)?;
             self.blocker = true;
         }
 
@@ -216,25 +228,17 @@ where
             }
             Some(TaskCompletion::Prediction { id, heatmap }) => {
                 self.blocker = false;
+                *state.corpus_mut().current_mut() = Some(id);
                 // mutations for hotbytes
-
                 *self.nn_mutator.hotbytes_mut() = heatmap;
-
+                
                 let num = self.iterations(state, id)?;
-                let mut diffs: Vec<u32> = Vec::with_capacity(num);
 
-                let input =  {
+                let input = {
                     let mut testcase = state.corpus().get(id)?.borrow_mut();
                     state.corpus().load_input_into(&mut testcase)?;
                     testcase.input().as_ref().unwrap().clone()
                 };
-
-                let _exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
-                let observers = executor.observers();
-                let edges = observers
-                    .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
-                    .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
-                let original_map = edges.to_vec();
 
                 let mut skipped_counter = 0;
 
@@ -248,36 +252,26 @@ where
 
                     // execute
                     let exit_kind = fuzzer.execute_input(state, executor, manager, &input)?;
-                    let observers = executor.observers();
-                    let edges = observers
-                        .match_name::<HitcountsMapObserver<StdMapObserver<u8, false>>>("edges")
-                        .unwrap_or_else(|| panic!("Incorrect observer name: MUST be edges"));
+                    let map = Self::map(executor);
 
-                    diffs.push(
-                        original_map
-                            .iter()
-                            .zip(edges.as_slice().iter())
-                            .filter_map(|(&orig, &i)| {
-                                if orig < i {
-                                    Some(u32::from(i - orig))
-                                } else {
-                                    None
-                                }
-                            })
-                            .sum(),
-                    );
+                    // send map to nn
+                    #[cfg(feature = "debug_mutations")]
+                    self.neural_network.rl_step(id, input.clone(), map)?;
+                    #[cfg(not(feature = "debug_mutations"))]
+                    self.neural_network.rl_step(id, map)?;
 
-                    let (_, _corpus_idx) = fuzzer
-                        .process_execution(state, manager, input, observers, &exit_kind, true)?;
+                    let (_, _corpus_idx) = fuzzer.process_execution(
+                        state,
+                        manager,
+                        input,
+                        executor.observers(),
+                        &exit_kind,
+                        true,
+                    )?;
                 }
-
-                let length = diffs.len();
-                #[allow(clippy::cast_precision_loss)]
-                let reward =
-                    diffs.iter().fold(0_u64, |sum, &i| sum + u64::from(i)) as f64 / length as f64;
-                self.neural_network.reward(reward)?;
-
-                println!("Send reward to neural network {reward}, mutations: {num}, skipped: {skipped_counter}, diffs: {diffs:?}");
+                
+                self.neural_network.calc_reward(id)?;
+                println!("[NN] mutations: {num}, skipped: {skipped_counter}");
                 return Ok(());
             }
         }
@@ -288,8 +282,7 @@ where
             start_timer!(state);
 
             let exist_depth;
-            let mut input = 
-            {
+            let mut input = {
                 let mut testcase = state.corpus().get(corpus_idx)?.borrow_mut();
                 exist_depth = if testcase.has_metadata::<MutationMeta>() {
                     *testcase.metadata::<MutationMeta>().unwrap().depth()

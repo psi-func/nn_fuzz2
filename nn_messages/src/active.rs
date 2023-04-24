@@ -1,3 +1,5 @@
+use libafl::prelude::CorpusId;
+
 use serde::{Deserialize, Serialize};
 use crate::error::Error;
 
@@ -65,16 +67,27 @@ impl TryFrom<&Vec<u8>> for TcpRequest {
 pub enum RLProtoMessage {
     /// Predict heatmap for this input
     Predict {
+        id: CorpusId,
         input: Vec<u8>,
+        map: Vec<u8>,
     },
     /// NN prediction with hotbytes indexes
     HeatMap {
+        id: CorpusId,
         idxs: Vec<u32>,
+    },
+    // Coverage map after each mutaton with hotbytes
+    MapAfterMutation {
+        id: CorpusId,
+        input: Vec<u8>,
+        map: Vec<u8>
     },
     /// Reward for NN prediction
     Reward {
+        id: CorpusId,
         score: f64,
     },
+    /// Error message
     Error(String),
 }
 

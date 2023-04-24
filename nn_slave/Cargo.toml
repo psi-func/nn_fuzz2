@@ -15,6 +15,7 @@ categories = ["development-tools::testing"]
 [features]
 default = []
 observer_feedback = []
+debug_mutations = []
 
 [dependencies]
 nn_messages = { path = "../nn_messages", version = "0.2"}

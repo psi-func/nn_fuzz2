@@ -4,6 +4,7 @@ use std::io;
 pub enum Error {
     IOError(String),
     NotAvailable(),
+    StopIteration(),
     InvalidFormat(String),
     IllegalState(String),
     SerializeError(String),
@@ -31,6 +32,9 @@ impl std::fmt::Display for Error {
             Self::NotAvailable() => {
                 writeln!(f, "Resource is unavailable")
             }
+            Self::StopIteration() => {
+                writeln!(f, "python stop iteration")
+            }
         }
     }
 }
@@ -39,6 +43,11 @@ impl Error {
     #[must_use]
     pub fn invalid_format(e: String) -> Self {
         Self::InvalidFormat(e)
+    }
+
+    #[must_use]
+    pub fn stop_iteration() -> Self {
+        Self::StopIteration()
     }
 
     #[must_use]
