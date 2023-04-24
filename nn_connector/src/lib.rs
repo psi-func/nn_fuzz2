@@ -61,7 +61,7 @@ impl PyFuzzConnector {
         match self.0.recv_testcase() {
             Ok(map) => Ok(map),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
@@ -93,7 +93,7 @@ impl PyFuzzActiveConnector {
         match self.0.recv_input() {
             Ok(res) => Ok(res),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
@@ -111,7 +111,7 @@ impl PyFuzzActiveConnector {
             Ok(res) => Ok(res),
             Err(error::Error::StopIteration()) => Err(PyErr::new::<PyStopIteration, _>("end of mutation stage")),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }

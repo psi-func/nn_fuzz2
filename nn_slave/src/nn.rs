@@ -1,4 +1,7 @@
-use libafl::prelude::{CorpusId, HasBytesVec, Input};
+use libafl::prelude::{
+    compress::GzipCompressor, CorpusId, Flags, HasBytesVec, Input, LLMP_FLAG_COMPRESSED,
+    LLMP_FLAG_INITIALIZED,
+};
 
 use serde::Serialize;
 use tokio::{
@@ -8,7 +11,9 @@ use tokio::{
     sync::mpsc,
 };
 
-use nn_messages::active::{RLProtoMessage, TcpRequest, TcpResponce};
+use nn_messages::active::{
+    RLProtoMessage, TcpNewMessage, TcpRequest, TcpResponce, COMPRESSION_THRESHOLD,
+};
 use nn_messages::error::Error as MsgError;
 
 use crate::{cli::SlaveOptions, error::Error};
@@ -104,7 +109,7 @@ where
 
     pub fn calc_reward(&self, id: CorpusId) -> Result<(), Error> {
         self.send
-            .blocking_send(Task::MutEnd { id, score: 0_f64})
+            .blocking_send(Task::MutEnd { id, score: 0_f64 })
             .map_err(|e| Error::illegal_state(format!("Couldn't send step! {e}")))?;
         Ok(())
     }
@@ -139,6 +144,7 @@ where
     port: u16,
     send: mpsc::Sender<TaskCompletion>,
     recv: mpsc::Receiver<Task<I>>,
+    compressor: GzipCompressor,
     state: State,
 }
 
@@ -152,6 +158,7 @@ where
             nn_name: None,
             send,
             recv,
+            compressor: GzipCompressor::new(COMPRESSION_THRESHOLD),
             port: 0,
             state: State::Listening,
         }
@@ -166,6 +173,7 @@ where
             nn_name: None,
             send,
             recv,
+            compressor: GzipCompressor::new(COMPRESSION_THRESHOLD),
             port,
             state: State::Listening,
         }
@@ -251,30 +259,26 @@ where
         loop {
             match self.recv.recv().await {
                 Some(Task::Predict { id, input, map }) => {
-                    let msg = RLProtoMessage::Predict {
-                        id,
-                        input: input.bytes().to_vec(),
-                        map,
-                    };
-
-                    send_tcp_message(stream, &msg).await?;
+                    self.send_to_nn(
+                        stream,
+                        &RLProtoMessage::Predict {
+                            id,
+                            input: input.bytes().to_vec(),
+                            map,
+                        },
+                    )
+                    .await?;
 
                     // wait for network responce
-                    let (id, heatmap) = recv_tcp_message(stream)
-                        .await
-                        .map_err(MsgError::from)
-                        .and_then(std::convert::TryInto::try_into)
-                        .map_err(|e| Error::serialize(format!("NNService: incorrect message: {e}")))
-                        .and_then(|msg: RLProtoMessage| {
-                            if let RLProtoMessage::HeatMap { id, idxs } = msg {
-                                Ok((id, idxs))
-                            } else {
-                                Err(Error::illegal_state(
-                                    "NNService: Incorrrect message type while handshaking!"
-                                        .to_string(),
-                                ))
-                            }
-                        })?;
+                    let (id, heatmap) = self.recv_from_nn(stream).await.and_then(|msg| {
+                        if let RLProtoMessage::HeatMap { id, idxs } = msg {
+                            Ok((id, idxs))
+                        } else {
+                            Err(Error::illegal_state(
+                                "NNService: Incorrrect message type while handshaking!".to_string(),
+                            ))
+                        }
+                    })?;
 
                     // push to fuzzer
                     self.send
@@ -284,26 +288,80 @@ where
                 }
                 #[cfg(feature = "debug_mutations")]
                 Some(Task::AfterMutCoverage { id, input, map }) => {
-                    let msg = RLProtoMessage::MapAfterMutation { id, input, map };
-
-                    send_tcp_message(stream, &msg).await?;
+                    self.send_to_nn(stream, &RLProtoMessage::Reward { id, score })
+                        .await?;
                 }
                 #[cfg(not(feature = "debug_mutations"))]
                 Some(Task::AfterMutCoverage { id, map }) => {
-                    let msg = RLProtoMessage::MapAfterMutation {
-                        id,
-                        input: vec![],
-                        map,
-                    };
-                    send_tcp_message(stream, &msg).await?;
+                    self.send_to_nn(
+                        stream,
+                        &RLProtoMessage::MapAfterMutation {
+                            id,
+                            input: vec![],
+                            map,
+                        },
+                    )
+                    .await?;
                 }
-                Some(Task::MutEnd {id, score }) => {
-                    let msg = RLProtoMessage::Reward { id, score };
-                    send_tcp_message(stream, &msg).await?;
+                Some(Task::MutEnd { id, score }) => {
+                    self.send_to_nn(stream, &RLProtoMessage::Reward { id, score })
+                        .await?;
                 }
                 None => return Ok(()),
             }
         }
+    }
+
+    async fn send_to_nn(&self, stream: &mut TcpStream, msg: &RLProtoMessage) -> Result<(), Error> {
+        fn pack_message(
+            compressor: &GzipCompressor,
+            msg: &RLProtoMessage,
+        ) -> Result<TcpNewMessage, Error> {
+            let serialized = postcard::to_allocvec(&msg)?;
+            let flags = LLMP_FLAG_INITIALIZED;
+
+            let tcp_message = match compressor.compress(&serialized)? {
+                Some(comp_buf) => TcpNewMessage {
+                    flags: flags | LLMP_FLAG_COMPRESSED,
+                    payload: comp_buf,
+                },
+                None => TcpNewMessage {
+                    flags,
+                    payload: serialized,
+                },
+            };
+
+            Ok(tcp_message)
+        }
+
+        let msg = pack_message(&self.compressor, msg)?;
+        send_tcp_message(stream, &msg).await.map_err(Error::from)
+    }
+
+    async fn recv_from_nn(&self, stream: &mut TcpStream) -> Result<RLProtoMessage, Error> {
+        fn unpack_message(
+            compressor: &GzipCompressor,
+            msg: &TcpNewMessage,
+        ) -> Result<RLProtoMessage, Error> {
+            let compressed;
+
+            let rl_bytes = if msg.flags & LLMP_FLAG_COMPRESSED == LLMP_FLAG_COMPRESSED {
+                compressed = compressor.decompress(&msg.payload)?;
+                &compressed
+            } else {
+                &msg.payload
+            };
+
+            postcard::from_bytes(rl_bytes.as_slice())
+                .map_err(|_e| Error::serialize("not RLProto message".to_string()))
+        }
+
+        let msg = recv_tcp_message(stream)
+            .await?
+            .try_into()
+            .map_err(|_e| Error::serialize("not TcpNewMessage type"))?;
+
+        unpack_message(&self.compressor, &msg)
     }
 }
 

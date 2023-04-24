@@ -1,4 +1,4 @@
-use libafl::prelude::CorpusId;
+use libafl::prelude::{CorpusId, Flags};
 
 use serde::{Deserialize, Serialize};
 use crate::error::Error;
@@ -104,5 +104,32 @@ impl TryFrom<&Vec<u8>> for RLProtoMessage {
 
     fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
         postcard::from_bytes(bytes.as_slice()).map_err(Error::from)
+    }
+}
+
+pub const COMPRESSION_THRESHOLD : usize = 0x1000;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TcpNewMessage {
+    /// the flags
+    pub flags: Flags,
+    /// actual context of message
+    pub payload: Vec<u8>,
+}
+
+
+impl TryFrom<&Vec<u8>> for TcpNewMessage {
+    type Error = Error;
+
+    fn try_from(bytes: &Vec<u8>) -> Result<Self, Error> {
+        postcard::from_bytes(bytes).map_err(Error::from)
+    }
+}
+
+impl TryFrom<Vec<u8>> for TcpNewMessage {
+    type Error = Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Error> {
+        postcard::from_bytes(&bytes).map_err(Error::from)
     }
 }
