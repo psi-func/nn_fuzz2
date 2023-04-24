@@ -6,6 +6,7 @@ stages:
 build:
   stage: build
   tags:
+    - docker
     - linux
   image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/rust:slim
   script:
@@ -24,6 +25,7 @@ build:
 push_pypi:
   stage: push_pypi
   tags:
+    - docker
     - linux
   image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/python:3.11-slim
   script:
