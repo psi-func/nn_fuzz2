@@ -1,6 +1,6 @@
 stages:
   - build
-  - push_pypi
+  # - push_pypi
   - deploy
 
 build:
@@ -10,12 +10,16 @@ build:
     - linux
   image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/rust:slim
   script:
-    - apt-get update && apt-get install git -y
+    - apt-get update && apt-get install git python3 python3-pip -y
     - rm -rf ../LibAFL
     - git clone --branch develop https://$DEPLOY_USER:$DEPLOY_TOKEN@git.mobiledep.ru/iifuzzing/libafl ../LibAFL
     - ls -la
     - cargo build --release 
     - mkdir -p ./artifacts && cp -r ./target/release/libnn_* ./target/release/nn_* ./artifacts
+    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
+    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
+    - cd nn_connector
+    - maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
   artifacts:
     paths:
       - artifacts/
@@ -25,26 +29,26 @@ build:
     - develop
     - master
 
-push_pypi:
-  stage: push_pypi
-  tags:
-    - docker
-    - linux
-  image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/python:3.11-slim
-  script:
-    - apt-get update && apt-get install curl -y
-    - curl --proto '=https' --tlsv1.3 -sSf https://sh.rustup.rs | sh -s -- -y
-    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
-    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
-    - cd nn_connector
-    - maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
-    # - docker run --rm -v $(pwd):/io registry2.mobiledep.ru/scan_r12-ghcr.io/pyo3/maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --manifest-path ./nn_connector/Cargo.toml --no-sdist
-  only:
-    - tags
-    - develop
-    - master
-  needs:
-    - build
+# push_pypi:
+#   stage: push_pypi
+#   tags:
+#     - docker
+#     - linux
+#   image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/python:3.11-slim
+#   script:
+#     - apt-get update && apt-get install curl -y
+#     - curl --proto '=https' --tlsv1.3 -sSf https://sh.rustup.rs | sh -s -- -y
+#     - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
+#     - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
+#     - cd nn_connector
+#     - maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
+#     # - docker run --rm -v $(pwd):/io registry2.mobiledep.ru/scan_r12-ghcr.io/pyo3/maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --manifest-path ./nn_connector/Cargo.toml --no-sdist
+#   only:
+#     - tags
+#     - develop
+#     - master
+#   needs:
+#     - build
     
 deploy:
   stage: deploy
