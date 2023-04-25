@@ -1,4 +1,3 @@
-import json
 import nn_connector
 
 conn = nn_connector.PyFuzzActiveConnector("nn_v0.1", 7878)
