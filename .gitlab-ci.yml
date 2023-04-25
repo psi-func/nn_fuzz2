@@ -1,7 +1,13 @@
 stages:
+  - clean
   - build
   - push_pypi
   - deploy
+
+cleanup:
+ stage: clean
+ script:
+  - rm -rf ../LibAFL
 
 build:
   stage: build
