@@ -16,7 +16,6 @@ build:
     - ls -la
     - cargo build --release 
     - mkdir -p /artifacts && cp -r ./target/release/libnn_* ./target/release/nn_* /artifacts
-    - --out-dir /artifacts
   artifacts:
     paths:
       - /artifacts
