@@ -6,6 +6,9 @@ stages:
 
 cleanup:
  stage: clean
+ tags:
+   - docker
+   - linux
  script:
   - rm -rf ../LibAFL
 
