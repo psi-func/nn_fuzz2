@@ -7,18 +7,19 @@ build:
   tags:
     - docker
     - linux
-  image: registry2.mobiledep.ru/scan_r12-hub.docker.com/library/rust:slim
+  image: registry2.mobiledep.ru/scan_r12-quay.io/pypa/manylinux2014_x86_64
   script:
-    - apt-get update && apt-get install git python3 python3-pip -y
+    - curl --proto '=https' --tlsv1.3 -sSf https://sh.rustup.rs | sh -s -- -y
+    - source "$HOME/.cargo/env"
     - rm -rf ../LibAFL
     - git clone --branch develop https://$DEPLOY_USER:$DEPLOY_TOKEN@git.mobiledep.ru/iifuzzing/libafl ../LibAFL
     - ls -la
     - cargo build --release 
     - mkdir -p ./artifacts && cp -r ./target/release/libnn_* ./target/release/nn_* ./artifacts
-    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
-    - pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
+    - python3.8 -m pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
+    - python3.8 -m pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
     - cd nn_connector
-    - maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
+    - python3.8 -m maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
   artifacts:
     paths:
       - artifacts/
