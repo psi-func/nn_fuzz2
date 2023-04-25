@@ -1,6 +1,5 @@
 stages:
   - build
-  # - push_pypi
   - deploy
 
 build:
@@ -70,5 +69,5 @@ deploy:
   only:
   - develop
   needs:
-  - push_pypi
+  - build
   when: manual
