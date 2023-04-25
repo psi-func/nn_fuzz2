@@ -65,7 +65,7 @@ deploy:
   - chmod 644 ~/.ssh/known_hosts
   script:
   - ssh $SERVER_USER@$SERVER_HOST "rm -rf /tmp/*"
-  - scp -r /artifacts $SERVER_USER@$SERVER_HOST:/tmp/
+  - scp -r ./artifacts $SERVER_USER@$SERVER_HOST:/tmp/
   only:
   - develop
   needs:
