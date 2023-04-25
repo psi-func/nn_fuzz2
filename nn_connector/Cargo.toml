@@ -1,9 +1,9 @@
 [package]
 name = "nn_connector"
 version.workspace = true
-authors = ["Shalagin Maksim <shalaginmx998@yandex.ru>"]
+authors = ["Vova Pupkin <pupkin@yandex.ru>"]
 description = "fuzzer tcp client for neural network communication"
-repository = "https://git.mobiledep.ru/iifuzzing/fuzzerclient.git"
+repository = ""
 readme = "../README.md"
 license = "MIT"
 keywords = ["fuzzing", "security"]
