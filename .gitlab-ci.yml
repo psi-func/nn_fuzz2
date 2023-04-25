@@ -13,7 +13,9 @@ build:
     - apt-get update && apt-get install git -y
     - git clone --branch develop https://$DEPLOY_USER:$DEPLOY_TOKEN@git.mobiledep.ru/iifuzzing/libafl ../LibAFL
     - ls -la
-    - cargo build --release --out-dir /artifacts
+    - cargo build --release 
+    - mkdir -p /artifacts && cp -r ./target/release/libnn_* ./target/release/nn_* /artifacts
+    - --out-dir /artifacts
   artifacts:
     paths:
       - /artifacts
