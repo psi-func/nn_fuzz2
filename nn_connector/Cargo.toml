@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 libafl = { workspace = true }
 nn_messages = { path = "../nn_messages", version = "0.2" }
-pyo3 = { version = "0.18", features = ["extension-module", "abi3", "abi3-py38"] }
+pyo3 = { version = "0.18.3", features = ["extension-module", "abi3", "abi3-py38"] }
 postcard = { version = "1.0", features = ["alloc"] }
 
 [dev-dependencies]
