@@ -1,0 +1,18 @@
+[global]
+input_path = "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/seed/"
+dict_path = "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/dict/png_dict.txt"
+harness_path = "../nn_fuzz/png-harness-cli"
+fuzz_path = "./test/first/"
+
+[proc.main_fuzz]
+type = "fuzz"
+cores = "0"
+spawn_client = true
+seed = "777"
+
+[proc.client_fuzz]
+type = "slave"
+cores = "1"
+
+[client]
+start_str = "python /home/sevenineone/fuzz/rl/ppo/driver/ppo.py"
