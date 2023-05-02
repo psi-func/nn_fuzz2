@@ -41,8 +41,8 @@ class FuzzSession:
             "queue_path": "-q {0} ",
         }
         self.binaries = {
-            "fuzz": "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/target/release/nn_fuzz",
-            "slave": "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/target/release/nn_slave",
+            "fuzz": "./nn_fuzz",
+            "slave": "./nn_slave",
         }
 
     def create(self):
