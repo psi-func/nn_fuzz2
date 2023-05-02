@@ -1,4 +1,6 @@
-# Driver for fuzzing
+# STCFuzz
+
+> Driver for STC Rust fuzzer.
 
 Сonfiguration must be described as a toml file, with folowing structure:
 
@@ -26,7 +28,8 @@ start_str = "Comand to run client"
 |Spawn_broker | If set true, spawn broker for fuzzers [default: true]|
 |Broker_port | The port broker listen to accept new instances. [default: 1337]|
 |Client_port | The port to which nn-client will be bind. [default: 7878]|
-|Cores | Spawn a client in each of the provided cores. Use 'all' to select all available cores. 'none' to run a client without binding to any core. ex: '1,2-4,6' selects the cores 1, 2, 3, 4, and 6. |
+|Nn_slave_port| The port to which nn-slave-client will be bind.|
+|Cores | Number of cores to run on. Can't be more, than your system have.|
 |Seed |The list of seeds for random generator per core, current_nanos if "auto" Must be not less than cores list len! Example: 703,12,0-10 |
 |Timeout | Process running time. After timeout, the process will be killed with SIGINT. |
 |Fuzz_path | Path where the fuzzing session will be executed. |
@@ -45,14 +48,14 @@ start_str = "Comand to run client"
 * Terminal:
 
 ```bash
-python fuzz_driver.py --config config.toml --print-every 300 --debug True
+stcfuzz --config config.toml --print-every 300 --debug True
 ```
 
 * As a module:
 
 ```python
-from fuzz_driver import FuzzSession
-session = FuzzSession("./fuzz_conf.toml", debug = True)
+from stcfuzz import driver
+session = driver.FuzzSession("./fuzz_conf.toml", debug = True)
 session.create() # Parsing config. Making all dirs.
 for k, v in session.start_cmd().items(): # Comands to be executed.
     print(f"{k}: {v}")

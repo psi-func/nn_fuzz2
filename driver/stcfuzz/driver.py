@@ -7,28 +7,30 @@ import time
 
 
 class FuzzSession:
-    def __init__(self, config_path: str, debug=False) -> None:
+    def __init__(self, config_path: str, start_core: int = 0, debug=False) -> None:
         self.debug = debug
         self.session = {}
+        self.cores_busy = start_core
         self.fuzz_path = os.path.abspath("./fuzz_results")
         with open(config_path, "r") as file:
             config = file.read()
             self.config = toml.loads(config)
-        self.fuzz_flags = {
+        self.fuzz_opts_func = {
             "spawn_client": (lambda x: "-S " if x is True else None),
             "spawn_broker": (lambda x: None if x is True else "-B "),
-            "type": (lambda x: os.path.abspath(self.binaries[x])),
+            "type": (lambda x: f"{os.path.abspath(self.binaries[x])} "),
+            "cores": (lambda x: f"-c {self.get_core_nums(x)} "),
         }
 
         self.fuzz_opts = {
-            "cores": "-c {0} ",
             "broker_port": "--broker-port {0} ",
             "client_port": "--client-port {0} ",
+            "nn_slave_port": "--port {0} ",
             "seed": "--seed {0} ",
             "timeout": "timeout -s SIGINT {0} ",
         }
         self.fuzz_path_opts = {
-            "fuzz_path": "{0} ",
+            "fuzz_path": "{0}",
             "bin_path": "{0} ",
             "harness_path": "{0} ",
             "stdout": "--stdout {0} ",
@@ -39,8 +41,8 @@ class FuzzSession:
             "queue_path": "-q {0} ",
         }
         self.binaries = {
-            "fuzz": "./nn_fuzz ", 
-            "slave": "./nn_slave ",
+            "fuzz": "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/target/release/nn_fuzz",
+            "slave": "/home/sevenineone/fuzz/rl/ppo/nn_fuzz/target/release/nn_slave",
         }
 
     def create(self):
@@ -52,7 +54,6 @@ class FuzzSession:
 
             if self.debug:
                 print(f'Parsed config for "{name}": {config}')
-
             self.session[name] = FuzzProcess(
                 process_str=self.conf_to_str(**config),
                 debug=self.debug,
@@ -67,13 +68,64 @@ class FuzzSession:
                 cwd=self.fuzz_path,
                 log_path=f"{self.fuzz_path}/client.log",
             )
-            if self.debug:
-                print(f'Start string for CLIENT: {self.config["client"]["start_str"]}')
+        if self.debug:
+            print("START CMDS:")
+            for k, v in self.start_cmd().items():
+                print(f"{k}: {v}")
+
+    def process_conf(self, conf, name):
+        conf_with_flags = {}
+        if name != "global" and name != "client":
+            initial_config = {**self.initial_conf(name), **conf}
+        else:
+            initial_config = conf
+        for k, v in initial_config.items():
+            if k == "fuzz_path" and name == "global":
+                self.fuzz_path = os.path.abspath(v)
+            elif k == "type":
+                conf_with_flags["bin_path"] = self.fuzz_opts_func[k](v)
+            elif k in self.fuzz_opts_func:
+                flag = self.fuzz_opts_func[k](v)
+                if flag:
+                    conf_with_flags[k] = flag
+            elif k in self.fuzz_opts:
+                conf_with_flags[k] = self.fuzz_opts[k].format(v)
+            elif k in self.fuzz_path_opts:
+                conf_with_flags[k] = self.fuzz_path_opts[k].format(os.path.abspath(v))
+            else:
+                raise Exception(f'THERE IS NO "{k}" OPTION!')
+        return conf_with_flags
+
+    def initial_conf(self, name):
+        fuzz_path = f"{self.fuzz_path}/{name}/"
+        os.makedirs(fuzz_path, exist_ok=True)
+        return {
+            "fuzz_path": fuzz_path,
+            "stdout": f"{fuzz_path}fuzz.out",
+            "log_path": f"{fuzz_path}stats.log",
+            "solutions_path": f"{fuzz_path}solutions/",
+            "queue_path": f"{fuzz_path}corpus_discovered/",
+            "cores": "1",
+        }
+
+    def get_core_nums(self, n):
+        n = int(n)
+        if self.cores_busy + n > psutil.cpu_count():
+            raise Exception(f"ALL {psutil.cpu_count()} CORES ARE BUSY!")
+        elif n <= 0:
+            raise Exception("NUMBER OF CORES MUST BE MORE THEN ZERO")
+        if n == 1:
+            cores = f"{self.cores_busy}"
+            self.cores_busy += 1
+        elif n > 1:
+            cores = f"{self.cores_busy}-{self.cores_busy + n - 1}"
+            self.cores_busy += n
+        return cores
 
     def run(self):
         for name, fuzzer in self.session.items():
-            fuzzer.run()
             print(f'Starting "{name}" process!')
+            fuzzer.run()
 
     def status(self):
         processes_status = {}
@@ -92,42 +144,6 @@ class FuzzSession:
         for name, fuzzer in self.session.items():
             fuzzer.kill()
             print(f'Process "{name}" is killed')
-
-    def process_conf(self, conf, name):
-        if name != "global" and name != "client":
-            conf_with_flags = self.get_paths(name)
-        else:
-            conf_with_flags = {}
-        for k, v in conf.items():
-            if k == "fuzz_path" and name == "global":
-                self.fuzz_path = os.path.abspath(v)
-            elif k == "type":
-                conf_with_flags["bin_path"] = self.fuzz_flags[k](v)
-            elif k in self.fuzz_flags:
-                flag = self.fuzz_flags[k](v)
-                if flag:
-                    conf_with_flags[k] = flag
-            elif k in self.fuzz_opts:
-                conf_with_flags[k] = self.fuzz_opts[k].format(v)
-            elif k in self.fuzz_path_opts:
-                conf_with_flags[k] = self.fuzz_path_opts[k].format(os.path.abspath(v))
-            else:
-                raise Exception(f'THERE IS NO "{k}" OPTION!')
-        return conf_with_flags
-
-    def get_paths(self, name):
-        os.makedirs(f"{self.fuzz_path}/{name}/", exist_ok=True)
-        return {
-            "fuzz_path": f"{self.fuzz_path}/{name}/",
-            "stdout": self.fuzz_path_opts["stdout"].format("fuzz.out"),
-            "log_path": f"{self.fuzz_path}/{name}/stats.log",
-            "solutions_path": self.fuzz_path_opts["solutions_path"].format(
-                "./solutions/"
-            ),
-            "queue_path": self.fuzz_path_opts["queue_path"].format(
-                "./corpus_discovered/"
-            ),
-        }
 
     @staticmethod
     def conf_to_str(
@@ -160,7 +176,7 @@ class FuzzSession:
                 cores,
                 stdout,
                 solutions_path,
-                f"{harness_path}@@",
+                f"{harness_path}-- @@",
             ]
         )
 
@@ -194,6 +210,7 @@ class FuzzProcess:
                 print(
                     f"PID: {self.process.pid} CWD: {self.cwd} LOG_PATH: {self.log_path}"
                 )
+                print("=-=-=-=-=-=-=-=-=-=-=-=")
         else:
             print(f"PROCESS {self.process.pid} ALREADY EXISTS")
 
@@ -231,15 +248,17 @@ class FuzzProcess:
         return self.process_str
 
 
-def main(args):
+def main():
+    args = get_args_parser().parse_args()
     if len(args.config) == 0:
         raise Exception('Provide config file via "--config"')
-    session = FuzzSession(args.config, args.debug)
+    session = FuzzSession(args.config, args.start_core, args.debug)
     session.create()
     session.run()
     while True:
         print(f"{datetime.now().time()}")
         print(session.status())
+        print("=-=-=-=-=-=-=-=-=-=-=-=")
         time.sleep(args.print_every)
 
 
@@ -262,16 +281,25 @@ def get_args_parser(add_help=True):
     parser.add_argument(
         "--print-every",
         dest="print_every",
-        default="60*5",
+        default=60 * 5,
         type=int,
         action="store",
         help="print processes info every N seconds",
     )
 
     parser.add_argument(
+        "--start-core",
+        dest="start_core",
+        default=0,
+        type=int,
+        action="store",
+        help="The number of the core from which the other cores are counted",
+    )
+
+    parser.add_argument(
         "--debug",
         dest="debug",
-        default="False",
+        default=False,
         type=bool,
         action="store",
         help="debug mode",
@@ -280,5 +308,4 @@ def get_args_parser(add_help=True):
 
 
 if __name__ == "__main__":
-    args = get_args_parser().parse_args()
-    main(args)
+    main()
