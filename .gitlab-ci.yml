@@ -17,9 +17,15 @@ build:
     - cargo build --release 
     - mkdir -p ./artifacts && cp -r ./target/release/libnn_* ./target/release/nn_* ./artifacts
     - python3.8 -m pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U pip
-    - python3.8 -m pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin
+    - python3.8 -m pip install -i ${SWS_PYPI_INDEX} --trusted-host ${SWS_PYPI_HOST} -U maturin twine
     - cd nn_connector
     - python3.8 -m maturin publish --repository-url ${SWS_PYPI_HOSTED} -u ${SWS_PYPI_USER} -p ${SWS_PYPI_PASSW} --no-sdist --compatibility manylinux2014
+    - cd ../driver
+    - export TWINE_REPOSITORY_URL=${SWS_PYPI_HOSTED}
+    - export TWINE_USERNAME=${SWS_PYPI_USER}
+    - export TWINE_PASSWORD=${SWS_PYPI_PASSW}
+    - python3.8 -m build
+    - python3.8 -m twine upload dist/* --verbose --non-interactive
   artifacts:
     paths:
       - artifacts/
