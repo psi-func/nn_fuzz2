@@ -91,7 +91,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                     }
                 }),
                 // Evol corpus
-                CachedOnDiskCorpus::<BytesInput>::new(format!("{}_{}", options.queue.clone(), core_id), 64).unwrap(),
+                CachedOnDiskCorpus::<BytesInput>::new(format!("{}_{}", options.queue.clone().to_str().unwrap(), core_id), 64).unwrap(),
                 // Solutions corpus
                 OnDiskCorpus::with_meta_format(
                     options.output.clone(),
