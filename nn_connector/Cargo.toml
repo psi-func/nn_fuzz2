@@ -1,9 +1,9 @@
 [package]
 name = "nn_connector"
 version.workspace = true
-authors = ["Shalagin Maksim <shalaginmx998@yandex.ru>"]
+authors = ["Vova Pupkin <pupkin@yandex.ru>"]
 description = "fuzzer tcp client for neural network communication"
-repository = "https://git.mobiledep.ru/iifuzzing/fuzzerclient.git"
+repository = ""
 readme = "../README.md"
 license = "MIT"
 keywords = ["fuzzing", "security"]
@@ -19,7 +19,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 libafl = { workspace = true }
 nn_messages = { path = "../nn_messages", version = "0.2" }
-pyo3 = { version = "0.17", features = ["extension-module"] }
+pyo3 = { version = "0.18.3", features = ["extension-module", "abi3", "abi3-py38"] }
 postcard = { version = "1.0", features = ["alloc"] }
 
 [dev-dependencies]

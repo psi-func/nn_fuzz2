@@ -1,9 +1,9 @@
 [package]
 name = "nn_slave"
 version.workspace = true
-authors = ["Maxim Shalagin <shalaginx998@yandex.ru>"]
+authors = ["Vova Pupkin <pupkin@yandex.ru>"]
 description = "Fuzzer with neural network inside"
-repository = "https://git.mobiledep.ru/iifuzzing/nn_fuzz/"
+repository = ""
 readme = "../README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["fuzzing", "testing", "security"]
@@ -15,6 +15,7 @@ categories = ["development-tools::testing"]
 [features]
 default = []
 observer_feedback = []
+debug_mutations = []
 
 [dependencies]
 nn_messages = { path = "../nn_messages", version = "0.2"}

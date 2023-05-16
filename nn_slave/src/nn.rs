@@ -1,4 +1,7 @@
-use libafl::prelude::{CorpusId, HasBytesVec, Input};
+use libafl::prelude::{
+    compress::GzipCompressor, CorpusId, HasBytesVec, Input, LLMP_FLAG_COMPRESSED,
+    LLMP_FLAG_INITIALIZED,
+};
 
 use serde::Serialize;
 use tokio::{
@@ -8,7 +11,9 @@ use tokio::{
     sync::mpsc,
 };
 
-use nn_messages::active::{RLProtoMessage, TcpRequest, TcpResponce};
+use nn_messages::active::{
+    RLProtoMessage, TcpNewMessage, TcpRequest, TcpResponce, COMPRESSION_THRESHOLD,
+};
 use nn_messages::error::Error as MsgError;
 
 use crate::{cli::SlaveOptions, error::Error};
@@ -17,11 +22,24 @@ pub mod mutatios;
 
 #[derive(Debug)]
 pub enum Task<I>
-where 
+where
     I: Input,
 {
-    Predict { id: CorpusId, input: I },
-    Rate { score: f64 },
+    Predict {
+        id: CorpusId,
+        input: I,
+        map: Vec<u8>,
+    },
+    AfterMutCoverage {
+        id: CorpusId,
+        #[cfg(feature = "debug_mutations")]
+        input: I,
+        map: Vec<u8>,
+    },
+    MutEnd {
+        id: CorpusId,
+        score: f64,
+    },
 }
 
 #[derive(Debug)]
@@ -66,17 +84,33 @@ where
         }
     }
 
-    pub fn predict(&self, id: CorpusId, input: I) -> Result<(), Error> {
+    pub fn predict(&self, id: CorpusId, input: I, map: Vec<u8>) -> Result<(), Error> {
         self.send
-            .blocking_send(Task::Predict { id, input })
+            .blocking_send(Task::Predict { id, input, map })
             .map_err(|e| Error::illegal_state(format!("Couldn't send input! {e}")))?;
         Ok(())
     }
 
-    pub fn reward(&self, score: f64) -> Result<(), Error> {
+    #[cfg(feature = "debug_mutations")]
+    pub fn rl_step(&self, id: CorpusId, input: I, map: Vec<u8>) -> Result<(), Error> {
         self.send
-            .blocking_send(Task::Rate { score })
-            .map_err(|e| Error::illegal_state(format!("Couldn't send reward! {e}")))?;
+            .blocking_send(Task::AfterMutCoverage { id, input, map })
+            .map_err(|e| Error::illegal_state(format!("Couldn't send step! {e}")))?;
+        Ok(())
+    }
+
+    #[cfg(not(feature = "debug_mutations"))]
+    pub fn rl_step(&self, id: CorpusId, map: Vec<u8>) -> Result<(), Error> {
+        self.send
+            .blocking_send(Task::AfterMutCoverage { id, map })
+            .map_err(|e| Error::illegal_state(format!("Couldn't send step! {e}")))?;
+        Ok(())
+    }
+
+    pub fn calc_reward(&self, id: CorpusId) -> Result<(), Error> {
+        self.send
+            .blocking_send(Task::MutEnd { id, score: 0_f64 })
+            .map_err(|e| Error::illegal_state(format!("Couldn't send step! {e}")))?;
         Ok(())
     }
 
@@ -106,9 +140,11 @@ struct NnService<I>
 where
     I: Input,
 {
+    nn_name: Option<String>,
+    port: u16,
     send: mpsc::Sender<TaskCompletion>,
     recv: mpsc::Receiver<Task<I>>,
-    port: u16,
+    compressor: GzipCompressor,
     state: State,
 }
 
@@ -119,8 +155,10 @@ where
     #[allow(dead_code)]
     fn new(send: mpsc::Sender<TaskCompletion>, recv: mpsc::Receiver<Task<I>>) -> Self {
         Self {
+            nn_name: None,
             send,
             recv,
+            compressor: GzipCompressor::new(COMPRESSION_THRESHOLD),
             port: 0,
             state: State::Listening,
         }
@@ -132,8 +170,10 @@ where
         recv: mpsc::Receiver<Task<I>>,
     ) -> Self {
         Self {
+            nn_name: None,
             send,
             recv,
+            compressor: GzipCompressor::new(COMPRESSION_THRESHOLD),
             port,
             state: State::Listening,
         }
@@ -176,18 +216,32 @@ where
                             ))
                         }
                     })?;
+                if let Some(nn_id) = self.nn_name.as_ref() {
+                    if *nn_id != nn_name {
+                        let responce = TcpResponce::Error {
+                            description: format!("Accepted {nn_name}, while {nn_id} expected..."),
+                        };
+                        send_tcp_message(&mut ss, &responce).await?;
+                        continue;
+                    }
+                } else {
+                    self.nn_name = Some(nn_name);
+                }
 
                 // 3 - send acceptance msg
                 send_tcp_message(&mut ss, &TcpResponce::Accepted {}).await?;
 
                 // Ok, go further
                 stream = Some(ss);
-                println!("Nn {nn_name} connected to fuzzer");
+                println!(
+                    "[NN] {} connected to fuzzer",
+                    self.nn_name.as_ref().unwrap()
+                );
                 self.state = State::Active;
             }
 
             if let State::Active = self.state {
-                match self.handle_connection(stream.as_mut().unwrap()).await {
+                match self.handle_connection(stream.take().unwrap()).await {
                     Ok(_) => (),
                     Err(e) => {
                         eprintln!("Some error with client {e} restarting...");
@@ -199,32 +253,32 @@ where
         }
     }
 
-    async fn handle_connection(&mut self, stream: &mut TcpStream) -> Result<(), Error> {
+    async fn handle_connection(&mut self, mut stream: TcpStream) -> Result<(), Error> {
+        let stream = &mut stream;
+
         loop {
             match self.recv.recv().await {
-                Some(Task::Predict { id, input }) => {
-                    let msg = RLProtoMessage::Predict {
-                        input: input.bytes().to_vec(),
-                    };
-
-                    send_tcp_message(stream, &msg).await?;
+                Some(Task::Predict { id, input, map }) => {
+                    self.send_to_nn(
+                        stream,
+                        &RLProtoMessage::Predict {
+                            id,
+                            input: input.bytes().to_vec(),
+                            map,
+                        },
+                    )
+                    .await?;
 
                     // wait for network responce
-                    let heatmap = recv_tcp_message(stream)
-                        .await
-                        .map_err(MsgError::from)
-                        .and_then(std::convert::TryInto::try_into)
-                        .map_err(|e| Error::serialize(format!("NNService: incorrect message: {e}")))
-                        .and_then(|msg: RLProtoMessage| {
-                            if let RLProtoMessage::HeatMap { idxs } = msg {
-                                Ok(idxs)
-                            } else {
-                                Err(Error::illegal_state(
-                                    "NNService: Incorrrect message type while handshaking!"
-                                        .to_string(),
-                                ))
-                            }
-                        })?;
+                    let (id, heatmap) = self.recv_from_nn(stream).await.and_then(|msg| {
+                        if let RLProtoMessage::HeatMap { id, idxs } = msg {
+                            Ok((id, idxs))
+                        } else {
+                            Err(Error::illegal_state(
+                                "NNService: Incorrrect message type while handshaking!".to_string(),
+                            ))
+                        }
+                    })?;
 
                     // push to fuzzer
                     self.send
@@ -232,14 +286,82 @@ where
                         .await
                         .map_err(|e| Error::illegal_state(format!("Couldn't send reward! {e}")))?;
                 }
-                Some(Task::Rate { score }) => {
-                    let msg = RLProtoMessage::Reward { score };
-
-                    send_tcp_message(stream, &msg).await?;
+                #[cfg(feature = "debug_mutations")]
+                Some(Task::AfterMutCoverage { id, input, map }) => {
+                    self.send_to_nn(stream, &RLProtoMessage::Reward { id, score })
+                        .await?;
+                }
+                #[cfg(not(feature = "debug_mutations"))]
+                Some(Task::AfterMutCoverage { id, map }) => {
+                    self.send_to_nn(
+                        stream,
+                        &RLProtoMessage::MapAfterMutation {
+                            id,
+                            input: vec![],
+                            map,
+                        },
+                    )
+                    .await?;
+                }
+                Some(Task::MutEnd { id, score }) => {
+                    self.send_to_nn(stream, &RLProtoMessage::Reward { id, score })
+                        .await?;
                 }
                 None => return Ok(()),
             }
         }
+    }
+
+    async fn send_to_nn(&self, stream: &mut TcpStream, msg: &RLProtoMessage) -> Result<(), Error> {
+        fn pack_message(
+            compressor: &GzipCompressor,
+            msg: &RLProtoMessage,
+        ) -> Result<TcpNewMessage, Error> {
+            let serialized = postcard::to_allocvec(&msg)?;
+            let flags = LLMP_FLAG_INITIALIZED;
+
+            let tcp_message = match compressor.compress(&serialized)? {
+                Some(comp_buf) => TcpNewMessage {
+                    flags: flags | LLMP_FLAG_COMPRESSED,
+                    payload: comp_buf,
+                },
+                None => TcpNewMessage {
+                    flags,
+                    payload: serialized,
+                },
+            };
+
+            Ok(tcp_message)
+        }
+
+        let msg = pack_message(&self.compressor, msg)?;
+        send_tcp_message(stream, &msg).await.map_err(Error::from)
+    }
+
+    async fn recv_from_nn(&self, stream: &mut TcpStream) -> Result<RLProtoMessage, Error> {
+        fn unpack_message(
+            compressor: &GzipCompressor,
+            msg: &TcpNewMessage,
+        ) -> Result<RLProtoMessage, Error> {
+            let compressed;
+
+            let rl_bytes = if msg.flags & LLMP_FLAG_COMPRESSED == LLMP_FLAG_COMPRESSED {
+                compressed = compressor.decompress(&msg.payload)?;
+                &compressed
+            } else {
+                &msg.payload
+            };
+
+            postcard::from_bytes(rl_bytes.as_slice())
+                .map_err(|_e| Error::serialize("not RLProto message".to_string()))
+        }
+
+        let msg = recv_tcp_message(stream)
+            .await?
+            .try_into()
+            .map_err(|_e| Error::serialize("not TcpNewMessage type"))?;
+
+        unpack_message(&self.compressor, &msg)
     }
 }
 

@@ -1,9 +1,9 @@
 [package]
 name = "nn_fuzz"
 version.workspace = true
-authors = ["Maxim Shalagin <shalaginx998@yandex.ru>"]
+authors = ["Vova Pupkin <pupkin@yandex.ru>"]
 description = "Fuzzer for executables with neural network backend"
-repository = "https://git.mobiledep.ru/iifuzzing/nn_fuzz/"
+repository = ""
 readme = "../README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["fuzzing", "testing", "security"]

@@ -264,10 +264,10 @@ where
         stream.write_all(&msg)?;
         Ok(())
     } else {
-        return Err(Error::illegal_state(format!(
+        Err(Error::illegal_state(format!(
             "Trying to send message a tcp message > u32! (size: {})",
             msg.len()
-        )));
+        )))
     }
 }
 

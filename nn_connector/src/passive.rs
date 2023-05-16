@@ -161,5 +161,5 @@ fn recv_event<I: Input>(
     };
 
     postcard::from_bytes(event_bytes.as_slice())
-        .map_err(|_e| Error::serialize_error("not Event<BytesInput> message".to_string()))
+        .map_err(|_e| Error::serialize("not Event<BytesInput> message".to_string()))
 }

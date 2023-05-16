@@ -18,7 +18,7 @@
     clippy::unreadable_literal
 )]
 
-use pyo3::{exceptions::{PyRuntimeError, PyTimeoutError}, prelude::*};
+use pyo3::{exceptions::{PyRuntimeError, PyTimeoutError, PyStopIteration}, prelude::*};
 #[allow(unused)]
 use pyo3::create_exception;
 
@@ -61,7 +61,7 @@ impl PyFuzzConnector {
         match self.0.recv_testcase() {
             Ok(map) => Ok(map),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
@@ -89,11 +89,11 @@ impl PyFuzzActiveConnector {
         Ok(Self(conn))
     }
 
-    pub fn recv_input(&mut self) -> PyResult<Vec<u8>> {
+    pub fn recv_input(&mut self) -> PyResult<HashMap<String, Vec<u8>>> {
         match self.0.recv_input() {
-            Ok(input) => Ok(input),
+            Ok(res) => Ok(res),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
@@ -106,11 +106,12 @@ impl PyFuzzActiveConnector {
         }
     }
 
-    pub fn recv_reward(&mut self) -> PyResult<f64> {
-        match self.0.recv_reward() {
-            Ok(reward) => Ok(reward),
+    pub fn recv_map(&mut self) -> PyResult<HashMap<String, Vec<u8>>> {
+        match self.0.recv_map() {
+            Ok(res) => Ok(res),
+            Err(error::Error::StopIteration()) => Err(PyErr::new::<PyStopIteration, _>("end of mutation stage")),
             Err(error::Error::NotAvailable()) => Err(PyErr::new::<PyTimeoutError, _>("read timeout expired")),
-            Err(error::Error::SerializeError(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
+            Err(error::Error::Serialize(msg)) => Err(PyErr::new::<PyTimeoutError, _>(msg)),
             Err(e) => Err(PyErr::new::<PyRuntimeError, _>(e.to_string())),
         }
     }
