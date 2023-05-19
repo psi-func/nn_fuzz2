@@ -32,6 +32,7 @@ start_str = "Comand to run client"
 |Cores | Number of cores to run on. Can't be more, than your system have.|
 |Seed |The list of seeds for random generator per core, current_nanos if "auto" Must be not less than cores list len! Example: 703,12,0-10 |
 |Timeout | Process running time. After timeout, the process will be killed with SIGINT. |
+|Execution_timeout | The timeout for each input execution (millis) [default: 1000] |
 |Fuzz_path | Path where the fuzzing session will be executed. |
 |Type | Type of binary to use. {"fuzz": "./nn_fuzz", "slave": "./nn_slave"} |
 | Bin_path | Path to excutable binary. Used instead of "Type" option [default: ./nn_fuzz and ./nn_slave] |

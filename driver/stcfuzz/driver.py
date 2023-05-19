@@ -28,6 +28,7 @@ class FuzzSession:
             "nn_slave_port": "--port {0} ",
             "seed": "--seed {0} ",
             "timeout": "timeout -s SIGINT {0} ",
+            "execution_timeout": "-t {0} ",
         }
         self.fuzz_path_opts = {
             "fuzz_path": "{0}",
@@ -160,6 +161,7 @@ class FuzzSession:
         stdout: str = "",
         solutions_path: str = "",
         seed: str = "",
+        execution_timeout: str = "",
         queue_path: str = "",
         **kwargs,
     ):
@@ -174,6 +176,7 @@ class FuzzSession:
                 queue_path,
                 input_path,
                 dict_path,
+                execution_timeout,
                 seed,
                 cores,
                 stdout,
