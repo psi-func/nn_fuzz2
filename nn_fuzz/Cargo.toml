@@ -22,6 +22,9 @@ bind_public = []
 nn_messages = { path = "../nn_messages", version = "0.2"}
 libafl = { workspace = true }
 
+libafl_targets = { path = "../../LibAFL/libafl_targets/" }
+libafl_cc = { path = "../../LibAFL/libafl_cc/" }
+
 mimalloc = { version = "0.1" }
 clap = { version = "4.1", features = ["derive"] }
 dotenv = { version = "0.15" }

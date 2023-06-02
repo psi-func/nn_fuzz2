@@ -1,19 +1,9 @@
-#![warn(clippy::cargo)]
-#![allow(clippy::multiple_crate_versions)]
-#![deny(clippy::all)]
-#![deny(clippy::pedantic)]
+use libafl_targets::{map_shared_memory, start_forkserver};
 
-pub const MAP_SIZE: usize = 65536;
-
-pub mod fuzz;
-pub mod cli;
-pub mod connector;
-pub mod error;
-
-mod components;
-mod llmp;
-mod launcher;
-mod utils;
-
-
-
+#[no_mangle]
+pub fn libafl_start_forkserver() {
+    // Map shared memory region for the edge coverage map
+    map_shared_memory();
+    // Start the forkserver
+    start_forkserver();
+}
