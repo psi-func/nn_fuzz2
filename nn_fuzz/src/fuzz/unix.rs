@@ -133,7 +133,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             .shmem_provider(&mut shmem_provider)
             //.arg_input_file(format!(".cur_input_{core_id}"))
             .parse_afl_cmdline(harness_args)
-            .build(tuple_list!(time_observer, edges_observer))
+            .build_dynamic_map(edges_observer, tuple_list!(time_observer))
             .unwrap();
 
         let mut executor = TimeoutForkserverExecutor::new(forkserver, options.timeout)

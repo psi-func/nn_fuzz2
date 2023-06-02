@@ -104,7 +104,7 @@ pub(super) fn fuzz(options: &SlaveOptions) -> Result<(), Error> {
             .debug_child(options.debug_child)
             .shmem_provider(&mut shmem_provider)
             .parse_afl_cmdline(options.args.clone())
-            .build(tuple_list!(time_observer, edges_observer))
+            .build_dynamic_map(edges_observer, tuple_list!(time_observer))
             .unwrap();
 
         let mut executor = TimeoutForkserverExecutor::new(forkserver, options.timeout)
