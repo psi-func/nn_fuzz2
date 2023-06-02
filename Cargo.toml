@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "afl_cc",
     "nn_fuzz",
     "nn_connector",
     "nn_slave",
@@ -15,6 +16,8 @@ version = "0.2.0"
 
 [workspace.dependencies]
 libafl = { path = "../LibAFL/libafl", version = "0.10", features = [] }
+libafl_targets = { path = "../LibAFL/libafl_targets", version = "0.10", features = [] }
+libafl_cc = { path = "../LibAFL/libafl_cc", version = "0.10", features = [] }
 
 [profile.release]
 lto = true
