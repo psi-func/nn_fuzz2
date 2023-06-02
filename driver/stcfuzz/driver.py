@@ -29,6 +29,7 @@ class FuzzSession:
             "seed": "--seed {0} ",
             "timeout": "timeout -s SIGINT {0} ",
             "execution_timeout": "-t {0} ",
+            "xtra_opts": "{0} ", # no validity checks
         }
         self.fuzz_path_opts = {
             "fuzz_path": "{0}",
@@ -163,12 +164,14 @@ class FuzzSession:
         seed: str = "",
         execution_timeout: str = "",
         queue_path: str = "",
+        xtra_opts: str = "",
         **kwargs,
     ):
         return "".join(
             [
                 timeout,
                 bin_path,
+                xtra_opts,
                 spawn_client,
                 client_port,
                 spawn_broker,
