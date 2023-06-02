@@ -21,9 +21,7 @@ bind_public = []
 [dependencies]
 nn_messages = { path = "../nn_messages", version = "0.2"}
 libafl = { workspace = true }
-
-libafl_targets = { path = "../../LibAFL/libafl_targets/" }
-libafl_cc = { path = "../../LibAFL/libafl_cc/" }
+env_logger = { workspace = true }
 
 mimalloc = { version = "0.1" }
 clap = { version = "4.1", features = ["derive"] }

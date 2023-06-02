@@ -20,6 +20,8 @@ debug_mutations = []
 [dependencies]
 nn_messages = { path = "../nn_messages", version = "0.2"}
 libafl = { workspace = true }
+env_logger = { workspace = true }
+
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1.0" }
