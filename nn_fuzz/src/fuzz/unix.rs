@@ -129,6 +129,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
         // Component: EXECUTOR
         let forkserver = ForkserverExecutor::builder()
             .program(options.executable.clone())
+            .envs(options.envs.clone())
             .debug_child(options.debug_child)
             .shmem_provider(&mut shmem_provider)
             //.arg_input_file(format!(".cur_input_{core_id}"))

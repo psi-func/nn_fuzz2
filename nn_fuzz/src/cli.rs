@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, ffi::OsString};
 use std::time::Duration;
 
 use clap::{self, Parser};
@@ -14,6 +14,18 @@ pub fn parse_args() -> FuzzerOptions {
 
 fn parse_timeout(src: &str) -> Result<Duration, Error> {
     Ok(Duration::from_millis(src.parse()?))
+}
+
+fn parse_env(src: &str) -> Result<(OsString, OsString), Error> {
+    match src.find("=") {
+        Some(place) => {
+            let (key, value) = src.split_at(place);
+            Ok((key.into(), value[1..].into()))
+        },
+        None => {
+            Err(Error::serialize(format!("Incorrect env setting {}", src)))
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -33,6 +45,15 @@ pub struct FuzzerOptions {
         allow_hyphen_values = true,
     )]
     pub args: Vec<String>,
+
+    /// Run harness with user-provided environment variables
+    /// ex: ASAN_OPTIONS=abort_on_error=1:error_code=0:detect_leaks=1
+    #[arg(
+        short,
+        long = "env",
+        value_parser = parse_env
+    )]
+    pub envs: Vec<(OsString, OsString)>,
 
     /// Spawn a client in each of the provided cores. Use 'all' to select all available
     /// cores. 'none' to run a client without binding to any core.

@@ -4,7 +4,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 use nn_fuzz::error::Error;
 
-use env_logger::{init_from_env, Env};
+use env_logger::Env;
 
 fn main() { 
     let env = Env::new().filter("FUZZ_LOG").write_style("FUZZ_LOG_STYLE");
