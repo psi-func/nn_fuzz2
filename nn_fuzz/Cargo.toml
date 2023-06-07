@@ -15,12 +15,13 @@ categories = ["development-tools::testing"]
 [features]
 default = []
 observer_feedback = []
-tui = []
+net_monitor = ["libafl/prometheus_monitor"]
 bind_public = []
 
 [dependencies]
 nn_messages = { path = "../nn_messages", version = "0.2"}
-libafl = { workspace = true }
+libafl = { workspace = true}
+log = { version = "0.4"}
 env_logger = { workspace = true }
 
 mimalloc = { version = "0.1" }

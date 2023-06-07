@@ -3,10 +3,10 @@ use super::{
     ondisk, tokens_mutations, tuple_list, AsMutSlice, AsanBacktraceObserver, BytesInput,
     CachedOnDiskCorpus, Corpus, CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer,
     FuzzerOptions, HasCorpus, HitcountsMapObserver, IndexesLenTimeMinimizerScheduler,
-    LlmpRestartingEventManager, MaxMapFeedback, Merge, MultiMonitor, NewHashFeedback, OnDiskCorpus,
+    LlmpRestartingEventManager, MaxMapFeedback, Merge, NewHashFeedback, OnDiskCorpus,
     QueueScheduler, RandBytesGenerator, ShMem, ShMemProvider, StdMapObserver, StdRand,
     StdScheduledMutator, StdShMemProvider, StdState, TimeFeedback, TimeObserver, TimeoutFeedback,
-    TimeoutForkserverExecutor,
+    TimeoutForkserverExecutor, StdMutationalStage, CalibrationStage
 };
 
 #[cfg(not(feature = "observer_feedback"))]
@@ -15,10 +15,11 @@ use super::StdFuzzer;
 #[cfg(feature = "observer_feedback")]
 use crate::components::fuzzer::HeavyFuzzer;
 
-#[cfg(feature = "tui")]
-use super::tui::TuiMonitor;
+#[cfg(feature = "net_monitor")]
+use super::monitors::PrometheusMonitor;
+#[cfg(not(feature = "net_monitor"))]
+use super::monitors::MultiMonitor;
 
-use crate::components::stages::CustomMutationalStage;
 use crate::error::Error;
 use crate::launcher::Launcher;
 
@@ -28,9 +29,9 @@ use crate::launcher::Launcher;
 #[allow(clippy::too_many_lines)]
 pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // Component: Monitor
-    #[cfg(feature = "tui")]
-    let monitor = TuiMonitor::new("NnFuzz".to_string(), true);
-    #[cfg(not(feature = "tui"))]
+    #[cfg(feature = "net_monitor")]
+    let monitor = PrometheusMonitor::new("127.0.0.1:8080".to_string(), |s| log::info!("{s}"));
+    #[cfg(not(feature = "net_monitor"))]
     let monitor = MultiMonitor::new(|s| println!("{s}"));
 
     // AFL++ compatible shmem provider
@@ -56,7 +57,16 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                 let mut feedback = 
                     // max map feedback linked to edges observer
                     MaxMapFeedback::tracking(&edges_observer, true, false);
-    
+                
+
+                // MAINTAIN FUZZER STAGES
+                // ======================
+                let mutator = StdScheduledMutator::with_max_stack_pow(
+                    havoc_mutations().merge(tokens_mutations()),
+                    6,
+                );
+
+                let mut stages = tuple_list!(CalibrationStage::new(&feedback), StdMutationalStage::new(mutator));
 
                 let mut objective = feedback_and!(
                     CrashFeedback::new(),
@@ -166,15 +176,6 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                     }
                 }
 
-                // MAINTAIN FUZZER STAGES
-                // ======================
-                let mutator = StdScheduledMutator::with_max_stack_pow(
-                    havoc_mutations().merge(tokens_mutations()),
-                    6,
-                );
-
-                let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
-
                 // RUUUN!
                 fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
 
@@ -182,11 +183,25 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             } else {
                 let time_observer = TimeObserver::new("time");
 
+                let map_feedback = MaxMapFeedback::tracking(&edges_observer, true, false);
+                
+                // MAINTAIN FUZZER STAGES
+                // ======================
+                let mutator = StdScheduledMutator::with_max_stack_pow(
+                    havoc_mutations().merge(tokens_mutations()),
+                    6,
+                );
+
+                #[cfg(not(feature="power_sched"))]
+                let mut stages = tuple_list!(StdMutationalStage::new(mutator));
+                #[cfg(feature="power_sched")]
+                let mut stages = tuple_list!(CalibrationStage::new(&feedback), StdMutationalStage::new(mutator));
+        
                 // Component: Feedback
                 // Rate input as interesting or not
                 let mut feedback = feedback_or!(
                     // max map feedback linked to edges observer
-                    MaxMapFeedback::tracking(&edges_observer, true, false),
+                    map_feedback,
                     // time feedback (dont need feedback state)
                     TimeFeedback::with_observer(&time_observer)
                 );
@@ -194,6 +209,8 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                 // Component: Objective
                 // Rate input as fuzzing target (errors, SEGFAULTS ...)
                 let mut objective = feedback_or_fast!(
+                    // save time metadata
+                    TimeFeedback::with_observer(&time_observer), 
                     // crashes
                     CrashFeedback::new(),
                     // hangs
@@ -304,15 +321,6 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                         );
                     }
                 }
-
-                // MAINTAIN FUZZER STAGES
-                // ======================
-                let mutator = StdScheduledMutator::with_max_stack_pow(
-                    havoc_mutations().merge(tokens_mutations()),
-                    6,
-                );
-
-                let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
 
                 // RUUUN!
                 fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
