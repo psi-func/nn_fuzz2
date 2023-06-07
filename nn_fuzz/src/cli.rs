@@ -93,6 +93,10 @@ pub struct FuzzerOptions {
     )]
     pub seed: Seeds,
 
+    /// The flag which enables usage backtrace information to make crashes unique
+    #[arg(short, long, help_heading = "Fuzz Options",)]
+    pub backtrace : bool,
+
     /// The timeout for each input execution (millis)
     #[arg(
         short, 
@@ -144,7 +148,7 @@ pub struct FuzzerOptions {
         short,
         long,
         value_name = "PATH",
-        default_value = "corpus_discovered/",
+        default_value = "corpus_discovered",
         help_heading = "Corpus Options",
     )]
     pub queue: PathBuf,

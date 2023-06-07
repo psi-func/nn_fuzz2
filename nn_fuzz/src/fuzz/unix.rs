@@ -1,11 +1,12 @@
 use super::{
-    current_nanos, feedback_or, feedback_or_fast, havoc_mutations, load_tokens, mutate_args,
-    ondisk, tokens_mutations, tuple_list, AsMutSlice, BytesInput, CachedOnDiskCorpus, Corpus,
-    CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer, FuzzerOptions, HasCorpus,
-    HitcountsMapObserver, IndexesLenTimeMinimizerScheduler, LlmpRestartingEventManager,
-    MaxMapFeedback, Merge, MultiMonitor, OnDiskCorpus, QueueScheduler, RandBytesGenerator, ShMem,
-    ShMemProvider, StdMapObserver, StdRand, StdScheduledMutator, StdShMemProvider, StdState,
-    TimeFeedback, TimeObserver, TimeoutFeedback, TimeoutForkserverExecutor,
+    current_nanos, feedback_or, feedback_or_fast, feedback_and, havoc_mutations, load_tokens, mutate_args,
+    ondisk, tokens_mutations, tuple_list, AsMutSlice, AsanBacktraceObserver, BytesInput,
+    CachedOnDiskCorpus, Corpus, CrashFeedback, EventConfig, ForkserverExecutor, Fuzzer,
+    FuzzerOptions, HasCorpus, HitcountsMapObserver, IndexesLenTimeMinimizerScheduler,
+    LlmpRestartingEventManager, MaxMapFeedback, Merge, MultiMonitor, NewHashFeedback, OnDiskCorpus,
+    QueueScheduler, RandBytesGenerator, ShMem, ShMemProvider, StdMapObserver, StdRand,
+    StdScheduledMutator, StdShMemProvider, StdState, TimeFeedback, TimeObserver, TimeoutFeedback,
+    TimeoutForkserverExecutor,
 };
 
 #[cfg(not(feature = "observer_feedback"))]
@@ -35,45 +36,41 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
     // AFL++ compatible shmem provider
     let shmem_provider = StdShMemProvider::new()?;
 
-    let mut run_client = |state: Option<_>,
-                          mut mgr: LlmpRestartingEventManager<_, _>,
-                          core_id: usize| {
-        let mut shmem_provider = StdShMemProvider::new()?;
-        let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
-        // provide shmid for forkserver
-        shmem.write_to_env("__AFL_SHM_ID").unwrap();
+    let mut run_client =
+        |state: Option<_>, mut mgr: LlmpRestartingEventManager<_, _>, core_id: usize| {
+            let mut shmem_provider = StdShMemProvider::new()?;
+            let mut shmem = shmem_provider.new_shmem(crate::MAP_SIZE).unwrap();
+            // provide shmid for forkserver
+            shmem.write_to_env("__AFL_SHM_ID").unwrap();
 
-        // Component: Observers
-        let edges_observer =
-            HitcountsMapObserver::new(unsafe { StdMapObserver::new("edges", shmem.as_mut_slice()) });
+            // Component: Observers
+            let edges_observer = HitcountsMapObserver::new(unsafe {
+                StdMapObserver::new("edges", shmem.as_mut_slice())
+            });
 
-        let time_observer = TimeObserver::new("time");
+            if options.backtrace {
+                let bt_observer = AsanBacktraceObserver::default();
 
-        // Component: Feedback
-        // Rate input as interesting or not
-        let mut feedback = feedback_or!(
-            // max map feedback linked to edges observer
-            MaxMapFeedback::tracking(&edges_observer, true, false),
-            // time feedback (dont need feedback state)
-            TimeFeedback::with_observer(&time_observer)
-        );
+                // Component: Feedback
+                // Rate input as interesting or not
+                let mut feedback = 
+                    // max map feedback linked to edges observer
+                    MaxMapFeedback::tracking(&edges_observer, true, false);
+    
 
-        // Component: Objective
-        // Rate input as fuzzing target (errors, SEGFAULTS ...)
-        let mut objective = feedback_or_fast!(
-            // crashes
-            CrashFeedback::new(),
-            // hangs
-            TimeoutFeedback::new()
-        );
+                let mut objective = feedback_and!(
+                    CrashFeedback::new(),
+                    // backtrace hash observer
+                    NewHashFeedback::new(&bt_observer)
+                );
 
-        // Component: State
-        let mut state = state.unwrap_or_else(|| {
-            StdState::new(
-                // RND
-                StdRand::with_seed(match &options.seed.vals {
-                    Some(vals) => {
-                        let (_, &seed) = options
+                // Component: State
+                let mut state = state.unwrap_or_else(|| {
+                    StdState::new(
+                        // RND
+                        StdRand::with_seed(match &options.seed.vals {
+                            Some(vals) => {
+                                let (_, &seed) = options
                             .cores
                             .ids
                             .iter()
@@ -82,103 +79,246 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                             .unwrap_or_else(|| {
                                 panic!("Cannot set seed to [Core {core_id}] from list {vals:?}");
                             });
-                        println!("[Core {core_id}] setup seed: {seed}");
-                        seed
-                    }
-                    None => {
-                        println!("[Core {core_id}] setup seed: auto");
-                        current_nanos()
-                    }
-                }),
-                // Evol corpus
-                CachedOnDiskCorpus::<BytesInput>::new(format!("{}_{}", options.queue.clone().to_str().unwrap(), core_id), 64).unwrap(),
-                // Solutions corpus
-                OnDiskCorpus::with_meta_format(
-                    options.output.clone(),
-                    ondisk::OnDiskMetadataFormat::JsonPretty,
-                )
-                .unwrap(),
-                // ----------
-                &mut feedback,
-                &mut objective,
-            )
-            .unwrap()
-        });
-
-        println!("start fuzzer...");
-
-        // LOAD TOKENS
-        load_tokens(options.tokens.as_slice(), &mut state, &mut mgr)?;
-
-        // Component: Scheduler
-        let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());
-
-        // Component: Real Fuzzer
-        #[cfg(feature = "observer_feedback")]
-        let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
-
-        #[cfg(not(feature = "observer_feedback"))]
-        let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
-
-        // MUTATE arguments
-        let mut harness_args = options.args.clone();
-        if let Some(config) = options.core_args_config.as_ref() {
-            mutate_args(harness_args.as_mut_slice(), config, core_id)?;
-        }
-
-        // Component: EXECUTOR
-        let forkserver = ForkserverExecutor::builder()
-            .program(options.executable.clone())
-            .envs(options.envs.clone())
-            .debug_child(options.debug_child)
-            .shmem_provider(&mut shmem_provider)
-            //.arg_input_file(format!(".cur_input_{core_id}"))
-            .parse_afl_cmdline(harness_args)
-            .build_dynamic_map(edges_observer, tuple_list!(time_observer))
-            .unwrap();
-
-        let mut executor = TimeoutForkserverExecutor::new(forkserver, options.timeout)
-            .expect("Failed to create executor.");
-
-        // LOAD or GENERATE initial seeds
-        // ==============================
-        if state.corpus().count() < 1 {
-            if let Some(ref inputs) = options.input {
-                state
-                    .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, inputs)
-                    .unwrap_or_else(|_| {
-                        panic!("Failed to load initial corpus at {:?}", &options.input);
-                    });
-                println!("We imported {} inputs from disk.", state.corpus().count());
-            } else {
-                let mut generator = RandBytesGenerator::new(options.input_max_length);
-                state
-                    .generate_initial_inputs(
-                        &mut fuzzer,
-                        &mut executor,
-                        &mut generator,
-                        &mut mgr,
-                        options.generate_count,
+                                println!("[Core {core_id}] setup seed: {seed}");
+                                seed
+                            }
+                            None => {
+                                println!("[Core {core_id}] setup seed: auto");
+                                current_nanos()
+                            }
+                        }),
+                        // Evol corpus
+                        CachedOnDiskCorpus::<BytesInput>::new(
+                            format!("{}_{}", options.queue.to_str().unwrap(), core_id),
+                            64,
+                        )
+                        .unwrap(),
+                        // Solutions corpus
+                        OnDiskCorpus::with_meta_format(
+                            options.output.clone(),
+                            ondisk::OnDiskMetadataFormat::JsonPretty,
+                        )
+                        .unwrap(),
+                        // ----------
+                        &mut feedback,
+                        &mut objective,
                     )
-                    .unwrap_or_else(|_| panic!("Failed to generate the initial corpus."));
-                println!(
-                    "Generated {} elements with interesting coverage",
-                    state.corpus().count()
+                    .unwrap()
+                });
+
+                println!("start fuzzer...");
+
+                // LOAD TOKENS
+                load_tokens(options.tokens.as_slice(), &mut state, &mut mgr)?;
+
+                // Component: Scheduler
+                let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());
+
+                // Component: Real Fuzzer
+                #[cfg(feature = "observer_feedback")]
+                let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
+
+                #[cfg(not(feature = "observer_feedback"))]
+                let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+
+                // MUTATE arguments
+                let mut harness_args = options.args.clone();
+                if let Some(config) = options.core_args_config.as_ref() {
+                    mutate_args(harness_args.as_mut_slice(), config, core_id)?;
+                }
+
+                // Component: EXECUTOR
+                let mut executor = ForkserverExecutor::builder()
+                    .program(options.executable.clone())
+                    .envs(options.envs.clone())
+                    .debug_child(options.debug_child)
+                    .shmem_provider(&mut shmem_provider)
+                    //.arg_input_file(format!(".cur_input_{core_id}"))
+                    .parse_afl_cmdline(harness_args)
+                    .build_dynamic_map(edges_observer, tuple_list!(bt_observer,))
+                    .expect("Failed to create executor.");
+
+                // LOAD or GENERATE initial seeds
+                // ==============================
+                if state.corpus().count() < 1 {
+                    if let Some(ref inputs) = options.input {
+                        state
+                            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, inputs)
+                            .unwrap_or_else(|_| {
+                                panic!("Failed to load initial corpus at {:?}", &options.input);
+                            });
+                        println!("We imported {} inputs from disk.", state.corpus().count());
+                    } else {
+                        let mut generator = RandBytesGenerator::new(options.input_max_length);
+                        state
+                            .generate_initial_inputs(
+                                &mut fuzzer,
+                                &mut executor,
+                                &mut generator,
+                                &mut mgr,
+                                options.generate_count,
+                            )
+                            .unwrap_or_else(|_| panic!("Failed to generate the initial corpus."));
+                        println!(
+                            "Generated {} elements with interesting coverage",
+                            state.corpus().count()
+                        );
+                    }
+                }
+
+                // MAINTAIN FUZZER STAGES
+                // ======================
+                let mutator = StdScheduledMutator::with_max_stack_pow(
+                    havoc_mutations().merge(tokens_mutations()),
+                    6,
                 );
+
+                let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
+
+                // RUUUN!
+                fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
+
+                Ok(())
+            } else {
+                let time_observer = TimeObserver::new("time");
+
+                // Component: Feedback
+                // Rate input as interesting or not
+                let mut feedback = feedback_or!(
+                    // max map feedback linked to edges observer
+                    MaxMapFeedback::tracking(&edges_observer, true, false),
+                    // time feedback (dont need feedback state)
+                    TimeFeedback::with_observer(&time_observer)
+                );
+
+                // Component: Objective
+                // Rate input as fuzzing target (errors, SEGFAULTS ...)
+                let mut objective = feedback_or_fast!(
+                    // crashes
+                    CrashFeedback::new(),
+                    // hangs
+                    TimeoutFeedback::new()
+                );
+
+                // Component: State
+                let mut state = state.unwrap_or_else(|| {
+                    StdState::new(
+                        // RND
+                        StdRand::with_seed(match &options.seed.vals {
+                            Some(vals) => {
+                                let (_, &seed) = options
+                        .cores
+                        .ids
+                        .iter()
+                        .zip(vals.iter())
+                        .find(|(&core, _)| core == core_id.into())
+                        .unwrap_or_else(|| {
+                            panic!("Cannot set seed to [Core {core_id}] from list {vals:?}");
+                        });
+                                println!("[Core {core_id}] setup seed: {seed}");
+                                seed
+                            }
+                            None => {
+                                println!("[Core {core_id}] setup seed: auto");
+                                current_nanos()
+                            }
+                        }),
+                        // Evol corpus
+                        CachedOnDiskCorpus::<BytesInput>::new(
+                            format!("{}_{}", options.queue.to_str().unwrap(), core_id),
+                            64,
+                        )
+                        .unwrap(),
+                        // Solutions corpus
+                        OnDiskCorpus::with_meta_format(
+                            options.output.clone(),
+                            ondisk::OnDiskMetadataFormat::JsonPretty,
+                        )
+                        .unwrap(),
+                        // ----------
+                        &mut feedback,
+                        &mut objective,
+                    )
+                    .unwrap()
+                });
+
+                println!("start fuzzer...");
+
+                // LOAD TOKENS
+                load_tokens(options.tokens.as_slice(), &mut state, &mut mgr)?;
+
+                // Component: Scheduler
+                let scheduler = IndexesLenTimeMinimizerScheduler::new(QueueScheduler::new());
+
+                // Component: Real Fuzzer
+                #[cfg(feature = "observer_feedback")]
+                let mut fuzzer = HeavyFuzzer::new(scheduler, feedback, objective);
+
+                #[cfg(not(feature = "observer_feedback"))]
+                let mut fuzzer = StdFuzzer::new(scheduler, feedback, objective);
+
+                // MUTATE arguments
+                let mut harness_args = options.args.clone();
+                if let Some(config) = options.core_args_config.as_ref() {
+                    mutate_args(harness_args.as_mut_slice(), config, core_id)?;
+                }
+
+                // Component: EXECUTOR
+                let forkserver = ForkserverExecutor::builder()
+                    .program(options.executable.clone())
+                    .envs(options.envs.clone())
+                    .debug_child(options.debug_child)
+                    .shmem_provider(&mut shmem_provider)
+                    //.arg_input_file(format!(".cur_input_{core_id}"))
+                    .parse_afl_cmdline(harness_args)
+                    .build_dynamic_map(edges_observer, tuple_list!(time_observer))
+                    .unwrap();
+
+                let mut executor = TimeoutForkserverExecutor::new(forkserver, options.timeout)
+                    .expect("Failed to create executor.");
+
+                // LOAD or GENERATE initial seeds
+                // ==============================
+                if state.corpus().count() < 1 {
+                    if let Some(ref inputs) = options.input {
+                        state
+                            .load_initial_inputs(&mut fuzzer, &mut executor, &mut mgr, inputs)
+                            .unwrap_or_else(|_| {
+                                panic!("Failed to load initial corpus at {:?}", &options.input);
+                            });
+                        println!("We imported {} inputs from disk.", state.corpus().count());
+                    } else {
+                        let mut generator = RandBytesGenerator::new(options.input_max_length);
+                        state
+                            .generate_initial_inputs(
+                                &mut fuzzer,
+                                &mut executor,
+                                &mut generator,
+                                &mut mgr,
+                                options.generate_count,
+                            )
+                            .unwrap_or_else(|_| panic!("Failed to generate the initial corpus."));
+                        println!(
+                            "Generated {} elements with interesting coverage",
+                            state.corpus().count()
+                        );
+                    }
+                }
+
+                // MAINTAIN FUZZER STAGES
+                // ======================
+                let mutator = StdScheduledMutator::with_max_stack_pow(
+                    havoc_mutations().merge(tokens_mutations()),
+                    6,
+                );
+
+                let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
+
+                // RUUUN!
+                fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
+                Ok(())
             }
-        }
-
-        // MAINTAIN FUZZER STAGES
-        // ======================
-        let mutator =
-            StdScheduledMutator::with_max_stack_pow(havoc_mutations().merge(tokens_mutations()), 6);
-
-        let mut stages = tuple_list!(CustomMutationalStage::new(mutator));
-
-        // RUUUN!
-        fuzzer.fuzz_loop(&mut stages, &mut executor, &mut state, &mut mgr)?;
-        Ok(())
-    }; // run_client closure
+        }; // run_client closure
 
     // LLMP init
     // =========
