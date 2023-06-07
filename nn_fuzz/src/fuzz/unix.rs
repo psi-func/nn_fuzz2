@@ -48,6 +48,8 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
             let edges_observer = HitcountsMapObserver::new(unsafe {
                 StdMapObserver::new("edges", shmem.as_mut_slice())
             });
+            
+            let time_observer = TimeObserver::new("time");
 
             if options.backtrace {
                 let bt_observer = AsanBacktraceObserver::default();
@@ -68,11 +70,15 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
 
                 let mut stages = tuple_list!(CalibrationStage::new(&feedback), StdMutationalStage::new(mutator));
 
-                let mut objective = feedback_and!(
-                    CrashFeedback::new(),
-                    // backtrace hash observer
-                    NewHashFeedback::new(&bt_observer)
-                );
+                let mut objective = feedback_or!(
+                    // save time metadata
+                    TimeFeedback::with_observer(&time_observer), 
+                    feedback_and!(
+                        // save crashes
+                        CrashFeedback::new(),
+                        // backtrace hash observer
+                        NewHashFeedback::new(&bt_observer)
+                ));
 
                 // Component: State
                 let mut state = state.unwrap_or_else(|| {
@@ -145,7 +151,7 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
                     .shmem_provider(&mut shmem_provider)
                     //.arg_input_file(format!(".cur_input_{core_id}"))
                     .parse_afl_cmdline(harness_args)
-                    .build_dynamic_map(edges_observer, tuple_list!(bt_observer,))
+                    .build_dynamic_map(edges_observer, tuple_list!(bt_observer, time_observer))
                     .expect("Failed to create executor.");
 
                 // LOAD or GENERATE initial seeds
@@ -181,8 +187,6 @@ pub(super) fn fuzz(options: &FuzzerOptions) -> Result<(), Error> {
 
                 Ok(())
             } else {
-                let time_observer = TimeObserver::new("time");
-
                 let map_feedback = MaxMapFeedback::tracking(&edges_observer, true, false);
                 
                 // MAINTAIN FUZZER STAGES
